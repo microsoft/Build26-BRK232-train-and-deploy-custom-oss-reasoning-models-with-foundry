@@ -1,0 +1,13 @@
+# Python packages required to run zava_sft_submit.ipynb locally.
+#
+# Install with:
+#   pip install --pre -r requirements.txt --extra-index-url \
+#       https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-python/pypi/simple
+#
+# Also required (not pip-installable):
+#   - Python 3.11 or newer  (azure-ai-projects uses enum.StrEnum)
+#   - Azure CLI             (https://learn.microsoft.com/cli/azure/install-azure-cli)
+#   - `az login` to the tenant that owns your Foundry project.
+
+azure-ai-projects==2.3.0a20260525001
+azure-identity

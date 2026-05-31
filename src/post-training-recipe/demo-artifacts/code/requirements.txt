@@ -1,0 +1,11 @@
+azure-ai-projects>=1.0.0,<2.0.0
+azure-identity>=1.23.0,<2.0.0
+azure-mgmt-cognitiveservices
+azureml-core
+huggingface-hub
+openai
+pandas
+python-dotenv
+requests
+streamlit
+tqdm
