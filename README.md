@@ -1,92 +1,153 @@
-# 🚀 Get Started
-
-**This repo is where attendees go to continue their learning after your session — and your Copilot agent will help you set it up.**
-
-### Step 1: Open your repo
-
-Open this repo in a **Codespace** (click the green **Code** button → **Create a Codespace**) — or clone it locally. Then open **GitHub Copilot Chat**.
-
-### Step 2: Add your content
-
-Give the agent something to work with. Drag files into the Explorer panel — session abstracts, outlines, screenshots, notes — and drop them in one of two places:
-
-| Where to put it | What goes there | Who sees it |
-|---|---|---|
-| **`_remove-before-publish/`** | Internal reference materials (abstracts, outlines, screenshots, planning docs) | **Copilot only** — never published |
-| **`/docs/`, `/src/`, or repo root** | Lab instructions, demo code, sample data, getting-started guides | **Attendees** — published with the repo |
-
-> 💡 Not sure? Start by dropping your session abstract or outline into `_remove-before-publish/`. The agent will figure out what to do with it.
-
-### Step 3: Ask the Agent
-
-Once your content is in the repo, use these three phrases with Copilot to build out your session repo:
-
-| Phrase to use with Copilot | What it does | When to run it |
-|---|---|---|
-| **"Help me get started"** | Sets up session title, description, outcomes, and owners | After you've added your session abstract or outline to the repo |
-| **"Help me refine content"** | Organizes your session content into the repo | Each time you add or update content |
-| **"Help me finalize"** | Final review, cleanup, and publication prep | When you're ready to publish |
-
-> 💡 **These three phrases are just the starting point.** Copilot can do much more — try asking it to brainstorm next steps for attendees, generate code samples, or build out your repo structure. Don't be afraid to put it in plan mode and ask for what you need.
-
----
-
 <a name="start-building"></a>
-<br>
 <p align="center">
 <img src="img/banner-build-26.png" alt="Microsoft Build 2026" width="1200"/>
 </p>
 
 # [Microsoft Build 2026](https://build.microsoft.com)
 
-## 🔥 BRKXXX: SESSION TITLE
+## 🔥 BRK232: Post-Training and Deploying Open Source Reasoning Models in Foundry
 
 ### Session Description
 
-*Add Session Description*
+Open-source reasoning models are powerful out of the box, but production performance comes from closing the loop. This session shows how to use **Microsoft Foundry** to collect production traces, curate them into datasets, and post-train reasoning models with reinforcement learning using frameworks like **slime**, **verl**, and **TRL** — then redeploy the improved models without managing the underlying GPU infrastructure. We cover when RL drives real gains versus other techniques, and walk through the full pipeline live on stage.
 
-### 🏫 Getting started in a guided session
+This repo contains the end-to-end source code shown in the session: an **SFT recipe** and an **async GRPO (RFT) recipe** for Qwen3 models, a multi-turn tool-use environment with a graded reward, and the helpers used to submit, monitor, and inspect training jobs on Foundry.
 
-To get started in a guided lab session:
-- <!-- step 1 -->
-- <!-- step 2 -->
-- <!-- step 3 -->
+▶️ [Watch the session on the Microsoft Build 2026 site](https://build.microsoft.com/en-US/sessions/BRK232)
 
-### 🏠 Getting started in your own environment
+### 🚀 Getting started
 
-If you're following these steps at your own pace:
-- Clone this repository
-- Set up your development environment
-- <!-- step 3 -->
+This session demonstrates a real Foundry training run on multi-node A100 / H100 clusters. To reproduce it end to end you will need access to a Foundry project with attached GPU compute. Read through the [What's in this repo](#-whats-in-this-repo) section first to decide which recipe to start with.
+
+> ⚠️ **Cloud costs apply.** Multi-node GPU training on Microsoft Foundry is expensive. When adapting the recipes, start with a small `--num_rollout` (RFT) or short SFT pass so you can validate end-to-end before scaling out.
+
+#### Prerequisites
+
+- A **[Microsoft Foundry](https://learn.microsoft.com/azure/ai-foundry/)** project. Copy the project endpoint URL from the project's **Overview** page — it has the format `https://<account>.services.ai.azure.com/api/projects/<project>`.
+- A **GPU compute cluster** attached to the project. The recipes default to **4 nodes** of NVIDIA H100 (`ND96r_H100_v5`) or A100 (`ND96amsr_A100_v4`) capacity in Microsoft Foundry.
+- A **user-assigned managed identity (UAI)** the training container will run as, plus the **storage connection name** in your Foundry workspace that the project MSI can write to.
+- **Python 3.11 or newer** (the prerelease `azure-ai-projects` SDK uses `enum.StrEnum`).
+- **[Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)** signed in to the tenant that owns your Foundry project (`az login`).
+
+#### 1. Clone the repo
+
+```bash
+git clone https://github.com/microsoft/Build26-BRK232-train-and-deploy-custom-oss-reasoning-models-with-foundry.git
+cd Build26-BRK232-train-and-deploy-custom-oss-reasoning-models-with-foundry
+```
+
+#### 2. Install the Python dependencies
+
+```bash
+pip install --pre -r src/requirements.txt \
+  --extra-index-url https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-python/pypi/simple
+```
+
+This installs the prerelease `azure-ai-projects` SDK and `azure-identity` used by both notebooks to submit jobs.
+
+#### 3. Sign in to Azure
+
+```bash
+az login
+```
+
+Make sure the active subscription owns your Foundry project: `az account show`.
+
+#### 4. Stage 1 — Run the SFT recipe (Qwen3-32B)
+
+Open [src/post-training-sft-recipe/zava_sft_submit.ipynb](src/post-training-sft-recipe/zava_sft_submit.ipynb) in Jupyter or Visual Studio Code, then in the first cell:
+
+```python
+from slime_sft_setup import setup_env, show_submit_params, submit_job, tail_rollouts
+
+setup_env(project="<your-foundry-project-name>")
+show_submit_params(cluster="h100")   # or cluster="a100"
+submit_job(cluster="h100")
+```
+
+This submits a 4-node SLIME-on-Ray async-GRPO job that supervised-fine-tunes **Qwen3-32B** on the `zava` τ-bench-style domain. Use `tail_rollouts(...)` to stream rollout previews back to the notebook while the job runs. The recipe lives in [src/post-training-sft-recipe/recipe/submit_sft.py](src/post-training-sft-recipe/recipe/submit_sft.py); see its [README](src/post-training-sft-recipe/recipe/README.md) for what to bump when you re-upload data or change containers.
+
+#### 5. Stage 2 — Run the RFT recipe (GRPO on Qwen3-14B, warm-started from the SFT LoRA)
+
+Open [src/retail_rft_submit_styled.ipynb](src/retail_rft_submit_styled.ipynb) and run:
+
+```python
+from slime_rl_setup import setup_env, submit_job, stream_logs
+
+setup_env(
+    project_endpoint="https://<account>.services.ai.azure.com/api/projects/<project>",
+    storage_connection_name="<your-storage-connection>",
+    managed_identity_uai="/subscriptions/<sub>/resourcegroups/<rg>/providers/microsoft.managedidentity/userassignedidentities/<uai>",
+    managed_identity_client_id="<uai-client-id>",
+)
+submit_job(cluster_name="<your-gpu-cluster>")
+stream_logs()
+```
+
+This submits the **Retail post-purchase resolution** GRPO run — a multi-turn tool-use task with deterministic tools and an 8-component weighted grader (see [retail_grader_rft_tools_v3.py](src/post-training-recipe/demo-artifacts/code/retail_grader_rft_tools_v3.py)). The default `sft_lora_uri` in [submit_job.py](src/post-training-recipe/submit_job.py) points at the demo's SFT checkpoint; override it via the `sft_lora_uri` argument on `submit_job()` to chain in your own Stage-1 output.
+
+> 🔧 The defaults baked into `submit_job.py` and `submit_sft.py` reference the **internal Foundry training pilot** project that hosted the on-stage demo. Override every `project_endpoint`, `managed_identity_*`, `storage_connection_name`, dataset URI, and `compute_cluster` value to point at your own project before submitting.
+
+### 📦 What's in this repo
+
+| Path | What it is |
+|:-----|:-----------|
+| [src/post-training-sft-recipe/](src/post-training-sft-recipe/) | **Stage 1 — SFT.** Notebook + recipe that submits a Qwen3-32B SLIME async-GRPO supervised fine-tune on 4×H100 or 4×A100. |
+| [src/post-training-recipe/](src/post-training-recipe/) | **Stage 2 — RFT.** Notebook + recipe that submits a Qwen3-14B GRPO run on the Retail post-purchase task, warm-started from the SFT LoRA. |
+| [src/post-training-recipe/demo-artifacts/code/](src/post-training-recipe/demo-artifacts/code/) | The custom **environment, tools, grader, and reward** for the multi-turn Retail task — the most reusable pieces if you're building your own RFT task. |
+| [src/post-training-recipe/demo-artifacts/data/](src/post-training-recipe/demo-artifacts/data/) | Paraphrased customer scenarios (train / val JSONL) with expected actions, amounts, and tool sequences used by the grader. |
+| [src/post-training-sft-recipe/reports/](src/post-training-sft-recipe/reports/) | Rollout-extraction utilities used to inspect what the model is producing during training. |
 
 ### 🧠 Learning Outcomes
 
 By the end of this session, you will be able to:
 
-- <!-- outcome 1 -->
-- <!-- outcome 2 -->
-- <!-- outcome 3 -->
+- Use Microsoft Foundry as the control plane for collecting production traces, curating training datasets, and launching distributed post-training jobs.
+- Decide **when reinforcement learning post-training is worth it** versus prompting, distillation, or plain SFT.
+- Run an end-to-end **SFT → async GRPO** pipeline on open-source reasoning models (Qwen3-14B / Qwen3-32B) with the SLIME framework on Ray.
+- Design a multi-turn tool-use environment and an **auditable, weighted reward function** that produces a stable learning signal.
+- Redeploy the improved model back into Foundry without managing the underlying GPU infrastructure.
 
 ### 💬 Keep Learning with Copilot
 
-Try these prompts with GitHub Copilot to explore the topics from this session. Open Copilot Chat in VS Code (`Ctrl+Alt+I` on Windows/Linux, `Cmd+Shift+I` on Mac), paste a prompt, and see what you learn. Try connecting the [Microsoft Learn MCP Server](#-microsoft-learn-mcp-server) for the latest official documentation.
+Try these prompts in GitHub Copilot Chat (`Ctrl+Alt+I` on Windows/Linux, `Cmd+Shift+I` on macOS). Connect the [Microsoft Learn MCP Server](#-microsoft-learn-mcp-server) first so answers are grounded in the latest official documentation.
 
-Use these as a starting point — or write your own!
+1. Understand the technique
 
-<!-- Prompts will be tailored to this session's content during repo setup. -->
+```
+Using the Microsoft Learn MCP Server, explain how Reinforcement Fine-Tuning (RFT) in Microsoft Foundry differs from SFT and DPO, and when I should pick each one.
+```
 
-> *Prompts coming soon — check back after the session content is finalized.*
+2. Inspect the reward design
+
+```
+Open src/post-training-recipe/demo-artifacts/code/retail_grader_rft_tools_v3.py and explain how each of the 8 score components contributes to the final reward. Suggest one change that would make the grader more robust to format drift.
+```
+
+3. Adapt the recipe to a new task
+
+```
+I want to use the SLIME async-GRPO recipe in src/post-training-recipe/ to train Qwen3-14B on my own multi-turn tool-use dataset. Walk me through everything I'd need to change in submit_job.py, the env, the tools, and the grader.
+```
 
 ### 💻 Technologies Used
 
-1. <!-- technology 1 -->
-1. <!-- technology 2 -->
-1. <!-- technology 3 -->
+1. **[Microsoft Foundry](https://learn.microsoft.com/azure/ai-foundry/)** — control plane for training jobs, datasets, managed identity, and model deployment.
+1. **[Microsoft Foundry fine-tuning (SFT / DPO / RFT)](https://learn.microsoft.com/azure/ai-foundry/concepts/fine-tuning-overview)** — managed post-training of open-source and frontier models.
+1. **[SLIME](https://github.com/THUDM/slime)** + **[Megatron-LM](https://github.com/NVIDIA/Megatron-LM)** + **[Ray](https://www.ray.io/)** — async GRPO training stack used by both recipes.
+1. **[SGLang](https://github.com/sgl-project/sglang)** — high-throughput rollout engine that pairs with the SLIME actor.
+1. **[Qwen3-14B / Qwen3-32B](https://huggingface.co/Qwen)** — the open-source reasoning base models being post-trained.
+1. **[azure-ai-projects (Python SDK)](https://learn.microsoft.com/python/api/overview/azure/ai-projects-readme)** + **[Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)** — job submission and authentication.
 
 ### 📚 Resources and Next Steps
 
 | Resource | Description |
 |:---------|:------------|
+| [BRK232 session page](https://build.microsoft.com/en-US/sessions/BRK232) | Recording, abstract, and speaker info |
+| [DEM321 — companion demo](https://build.microsoft.com/en-US/sessions/DEM321) | Shorter walkthrough of the same scenario shown in the demo theater |
+| [Microsoft Foundry in Discord](https://aka.ms/build/foundrydiscord) | Discuss Foundry with the product team and community |
+| [Microsoft Foundry fine-tuning concepts](https://learn.microsoft.com/azure/ai-foundry/concepts/fine-tuning-overview) | When to use SFT, DPO, and RFT |
+| [SLIME framework](https://github.com/THUDM/slime) | Async RL framework used by both recipes in this repo |
 | [https://aka.ms/build26-next-steps](https://aka.ms/build26-next-steps) | Explore lab and session repos to further your learning from Microsoft Build |
 
 
@@ -108,17 +169,25 @@ For more info, other clients, and to post questions, visit the [Learn MCP Server
 
 ## Content Owners
 
-<!-- TODO: Add yourself as a content owner
-1. Change the src in the image tag to {your github url}.png
-2. Change INSERT NAME HERE to your name
-3. Change the github url in the final href to your url. -->
-
 <table>
 <tr>
-    <td align="center"><a href="http://github.com/yourGitHubHandle">
-        <img src="https://github.com/yourGitHubHandle.png" width="100px;" alt="INSERT NAME HERE"/><br />
-        <sub><b>INSERT NAME HERE</b></sub></a><br />
-            <a href="https://github.com/yourGitHubHandle" title="talk">📢</a>
+    <td align="center"><a href="https://github.com/vijayaski">
+        <img src="https://github.com/vijayaski.png" width="100px;" alt="Vijay Aski"/><br />
+        <sub><b>Vijay Aski</b></sub></a><br />
+        <sub>Senior Partner Director, Microsoft</sub><br />
+        <a href="https://build.microsoft.com/en-US/sessions/BRK232" title="talk">📢</a>
+    </td>
+    <td align="center">
+        <img src="https://avatars.githubusercontent.com/u/9919?s=100&v=4" width="100px;" alt="Manoj Bableshwar"/><br />
+        <sub><b>Manoj Bableshwar</b></sub><br />
+        <sub>Microsoft</sub><br />
+        <a href="https://build.microsoft.com/en-US/sessions/BRK232" title="talk">📢</a>
+    </td>
+    <td align="center"><a href="https://www.linkedin.com/in/clauren">
+        <img src="https://avatars.githubusercontent.com/u/9919?s=100&v=4" width="100px;" alt="Chris Lauren"/><br />
+        <sub><b>Chris Lauren</b></sub></a><br />
+        <sub>Partner Group Product Manager, Core AI, Microsoft</sub><br />
+        <a href="https://build.microsoft.com/en-US/sessions/BRK232" title="talk">📢</a>
     </td>
 </tr></table>
 
