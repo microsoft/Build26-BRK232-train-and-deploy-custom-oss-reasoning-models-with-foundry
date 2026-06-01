@@ -28,7 +28,7 @@ PILOT_UAI = (
     "/userassignedidentities/fdp-training-pilot-umi"
 )
 PILOT_UAI_CLIENT_ID = "9959f773-bc1b-48c5-8546-b80100d2cf18"
-COMPUTE_CLUSTER = "testfoundrywcusclustera100"
+COMPUTE_CLUSTER = "Atlas100"
 GPU_COMPUTE_ID = (
     "/subscriptions/72c03bf3-4e69-41af-9532-dfcdc3eefef4"
     "/resourcegroups/computeinstance-e2e"
@@ -41,19 +41,18 @@ STORAGE_CONNECTION_NAME = "fdptrainingpilot"
 
 JOB_NAME_PREFIX = "Retail-RFT-Qwen14B"
 
-# Warm-start from the SFT LoRA so GRPO starts from the demo policy.
-# NOTE: this is a *published* Foundry asset name and must not be renamed.
-# Override per-job via the `sft_lora_uri` parameter on submit_job() when needed.
-SFT_LORA_DATASET_ID = (
-    "azureai://accounts/foundry-training-pilot/projects/"
-    "foundry-training-pilot-proj/data/"
-    "zava-sft-qwen3-32b-a100-checkpoints-1779968060624/versions/20260528113423611"
-)
-ENVIRONMENT_ID = "mcr.microsoft.com/azureml/curated/slime-pytorch-2.9-cuda12.8:3"
-# This curated image ships numpy 2.x, but Megatron's init asserts numpy 1.x
-# (`np.__version__.startswith("1.")`). We patch numpy at runtime via a pip pin
-# prepended to the command below — see the `NUMPY_PIN_CMD` injection.
-NUMPY_PIN_CMD = "python -m pip install --quiet --no-cache-dir 'numpy<2'"
+# Warm-start from the SFT LoRa so GRPO starts from the demo policy.
+# No project-specific default — the notebook supplies the SFT adapter URI per
+# submission via `submit_job(sft_lora_uri=...)`. Override here only if you
+# want a fallback for the `python submit_job.py` CLI path.
+SFT_LORA_DATASET_ID = None
+ENVIRONMENT_ID = "fdpcommandbtestcanary.azurecr.io/azureml/slime-310:build-demo-26-1"
+# Z-derived build-demo-26-1 image — bakes in compatible numpy + transformer_engine,
+# so no runtime pip pins are needed anywhere (neither at the launcher layer
+# nor per-Ray-actor in retail_slime_train.py). The container's Singularity
+# bootstrapper needs to know which registry to pull capability sidecars
+# from; we set AZUREML_CR_BOOTSTRAPPER_CONFIG_OVERRIDE below in
+# _build_body_from_ids.
 
 HF_MODEL_ID = "Qwen/Qwen3-14B"
 HF_HOME = "./hf_cache"
@@ -73,6 +72,7 @@ LEARNING_RATE = "6e-7"
 NUM_ROLLOUTS = 200  # Cover the compact dataset several times without overlong jobs.
 ROLLOUT_BATCH_SIZE = 4
 N_SAMPLES_PER_PROMPT = 8  # Keep GRPO groups large enough for stable advantages.
+EPS_CLIP_HIGH = "0.40"   # Asymmetric DAPO clip upper bound (default in trainer is 0.28).
 ROLLOUT_MAX_RESPONSE_LEN = 1536
 ROLLOUT_TEMPERATURE = "0.7"  # Lower temperature keeps tool-use rollouts easier to grade.
 
@@ -175,7 +175,11 @@ def build_request_body(upload: bool = True):
 
     # Prefer the image-baked Retail tools, while keeping uploaded code as a fallback.
     envs["PYTHONPATH"] = "/opt/retail:" + envs.get("PYTHONPATH", "/opt/Megatron-LM/")
-    # Let the container choose between dashboard metrics and debug metrics.
+    # Gate the rollout_logger AzureML metric stream. When false (default) only
+    # eval/reward_mean, train/response_length_mean, train/entropy_loss, and
+    # train/kl_loss reach the Studio Metrics tab.
+    envs["RETAIL_VERBOSE_LOGS"] = "true" if VERBOSE_LOGS else "false"
+    # Back-compat alias kept for older custom hooks that may still read it.
     envs["ROLLOUT_VERBOSE_LOGS"] = "true" if VERBOSE_LOGS else "false"
     # Patch helper defaults because this recipe ships Retail-named data files.
     import re as _re
@@ -217,20 +221,50 @@ def build_request_body(upload: bool = True):
     cmd += " --dynamic_sampling_filter_path slime.rollout.filter_hub.dynamic_sampling_filters.check_reward_nonzero_std"
     cmd += " --over_sampling_batch_size 8"
 
+    # Asymmetric DAPO clip — let positive-advantage updates take bigger upside
+    # steps. Default in retail_slime_train.py is 0.28; matches zv-rft-14b-v6c2-mofd.
+    cmd += f" --eps_clip_high {EPS_CLIP_HIGH}"
+
     # Bound trajectories so long tool loops cannot exceed Slime sequence length.
     envs["RETAIL_MAX_TRAJ_TOKENS"] = "16384"
     envs["RETAIL_MAX_TURNS"]       = "10"
     envs["RETAIL_ENV_STEP_TIMEOUT"] = "30"
     envs["RETAIL_DOMAIN"]      = "retail"  # Preserve the helper contract for downstream tags.
 
-    # The curated `slime-pytorch-2.9-cuda12.8:3` image ships numpy 2.x but
-    # Megatron asserts `np.__version__.startswith("1.")` in its init. Prepend a
-    # pip pin so each AISC node downgrades numpy before the Python entrypoint
-    # imports Megatron.
-    cmd = f"{NUMPY_PIN_CMD} && {cmd}"
+    # Canary slime-310:build-demo-26-1 is pulled from the fdpcommandbtestcanary
+    # ACR; tell the Singularity bootstrapper which registry+prefix to fetch
+    # capability sidecars from.
+    envs["AZUREML_CR_BOOTSTRAPPER_CONFIG_OVERRIDE"] = json.dumps({
+        "capabilities_registry": {
+            "registry": {
+                "url": "fdpcommandbtestcanary.azurecr.io",
+                "username": None,
+                "password": None,
+            },
+            "repo_prefix": "cr2026051502_singularity_bootstrapper",
+            "regional_tag_prefix": False,
+        }
+    })
+    envs["SINGULARITY_SIDECAR_CONSOLIDATION"] = "false"
 
     body["properties"]["command"] = cmd
     body["properties"]["inputs"].pop("model_dataset", None)
+
+    # Expose the in-job Streamlit dashboard ("Foundry Rollout Browser",
+    # launched as a sidecar from retail_slime_train.py on port 8501) as a
+    # custom Foundry job service so the AISC compute fabric routes a public
+    # endpoint to it. Once the head node starts the streamlit process, the
+    # service goes from NotStarted -> Running and the portal exposes the URL.
+    body["properties"].setdefault("services", {})
+    body["properties"]["services"]["foundry-rollout-browser"] = {
+        "jobServiceType": "Custom",
+        "port": 8501,
+        "endpoint": "",
+        "status": "NotStarted",
+        "errorMessage": None,
+        "properties": {"requiredPort": "8501"},
+        "nodes": None,
+    }
 
     body["properties"]["tags"] = {
         "scenario": "retail-rft",

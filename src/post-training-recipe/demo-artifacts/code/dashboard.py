@@ -254,10 +254,43 @@ footer {
 }
 
 .foundry-file-stats {
+    align-items: center;
     display: flex;
     flex-wrap: wrap;
     gap: 0.4rem;
     margin-top: 0.6rem;
+}
+
+.foundry-refresh-form {
+    display: inline-flex;
+    margin: 0;
+}
+
+.foundry-refresh-chip {
+    align-items: center;
+    appearance: none;
+    background: #ffffff;
+    border: 1px solid var(--foundry-stroke);
+    border-radius: 999px;
+    color: var(--foundry-text);
+    cursor: pointer;
+    display: inline-flex;
+    flex: 0 0 auto;
+    font-family: inherit;
+    font-size: 0.86rem;
+    height: 1.95rem;
+    justify-content: center;
+    line-height: 1;
+    padding: 0;
+    text-decoration: none;
+    width: 1.95rem;
+}
+
+.foundry-refresh-chip:hover {
+    background: var(--foundry-surface-subtle);
+    border-color: var(--foundry-stroke-strong);
+    color: var(--foundry-text);
+    text-decoration: none;
 }
 
 .foundry-file-stats span,
@@ -511,6 +544,80 @@ footer {
     border-radius: 8px;
 }
 
+.foundry-tool-table-wrap {
+    border: 1px solid var(--foundry-stroke);
+    border-radius: 8px;
+    overflow-x: auto;
+}
+
+.foundry-tool-table {
+    border-collapse: collapse;
+    min-width: 64rem;
+    table-layout: fixed;
+    width: 100%;
+}
+
+.foundry-tool-table th,
+.foundry-tool-table td {
+    border-bottom: 1px solid var(--foundry-stroke);
+    border-right: 1px solid var(--foundry-stroke);
+    color: var(--foundry-text);
+    font-size: 0.86rem;
+    line-height: 1.35;
+    padding: 0.68rem 0.75rem;
+    text-align: left;
+    vertical-align: middle;
+}
+
+.foundry-tool-table th {
+    background: #f8f8fa;
+    color: var(--foundry-text-muted);
+    font-weight: 500;
+}
+
+.foundry-tool-table tr:last-child td {
+    border-bottom: 0;
+}
+
+.foundry-tool-table th:last-child,
+.foundry-tool-table td:last-child {
+    border-right: 0;
+}
+
+.foundry-tool-table-step {
+    text-align: right !important;
+}
+
+.foundry-tool-name {
+    font-family: "Cascadia Mono", "Consolas", monospace;
+    font-size: 0.85rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.foundry-tool-status {
+    white-space: nowrap;
+}
+
+.foundry-tool-status-ok {
+    color: var(--foundry-success) !important;
+}
+
+.foundry-tool-status-different,
+.foundry-tool-status-missing-output,
+.foundry-tool-status-unexpected-output {
+    color: var(--foundry-warning) !important;
+}
+
+.foundry-tool-args {
+    font-family: "Cascadia Mono", "Consolas", monospace;
+    font-size: 0.78rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 [data-testid="stExpander"] {
     background: rgba(255, 255, 255, 0.78);
     border: 1px solid var(--foundry-stroke);
@@ -594,6 +701,9 @@ def render_foundry_sidebar_brand(log_dir: str, train_file_count: int, eval_file_
         <div class="foundry-source" title="{_h(log_dir)}">{_h(log_dir)}</div>
     </div>
     <div class="foundry-file-stats">
+        <form action="" class="foundry-refresh-form" method="get" target="_self">
+            <button class="foundry-refresh-chip" name="refresh" title="Refresh folder" type="submit" value="1" aria-label="Refresh folder">↻</button>
+        </form>
         <span>{fluent_icon("BuildQueue")} <strong>{train_file_count}</strong> train</span>
         <span>{fluent_icon("TestBeaker")} <strong>{eval_file_count}</strong> eval</span>
     </div>
@@ -1279,27 +1389,89 @@ def get_output_tool_calls(row, trace: list[dict] | None = None) -> list[dict]:
 def build_tool_comparison_rows(row, trace: list[dict] | None = None) -> list[dict]:
     expected = get_expected_tool_names(row)
     output_calls = get_output_tool_calls(row, trace)
+    unmatched_output_indices = list(range(len(output_calls)))
     rows = []
-    for index in range(max(len(expected), len(output_calls))):
-        expected_name = expected[index] if index < len(expected) else ""
-        output_call = output_calls[index] if index < len(output_calls) else {}
-        output_name = output_call.get("name", "")
-        if expected_name and output_name and expected_name == output_name:
-            status = "OK"
-        elif expected_name and not output_name:
+    for expected_name in expected:
+        match_index = next(
+            (
+                output_index
+                for output_index in unmatched_output_indices
+                if output_calls[output_index].get("name", "") == expected_name
+            ),
+            None,
+        )
+        if match_index is None:
+            output_call = {}
+            output_name = ""
             status = "Missing output"
-        elif output_name and not expected_name:
-            status = "Unexpected output"
         else:
-            status = "Different"
+            output_call = output_calls[match_index]
+            output_name = output_call.get("name", "")
+            unmatched_output_indices.remove(match_index)
+            status = "OK"
         rows.append({
-            "Step": index + 1,
+            "Step": len(rows) + 1,
             "Expected tool": expected_name or "-",
             "Output tool": output_name or "-",
             "Status": status,
             "Output arguments": format_structured_text(output_call.get("arguments"), limit=180) if output_call else "",
         })
+
+    for output_index in unmatched_output_indices:
+        output_call = output_calls[output_index]
+        output_name = output_call.get("name", "")
+        rows.append({
+            "Step": len(rows) + 1,
+            "Expected tool": "-",
+            "Output tool": output_name or "-",
+            "Status": "Unexpected output",
+            "Output arguments": format_structured_text(output_call.get("arguments"), limit=180) if output_call else "",
+        })
     return rows
+
+
+def render_tool_comparison_table(table: pd.DataFrame):
+    status_class = {
+        "OK": "foundry-tool-status-ok",
+        "Different": "foundry-tool-status-different",
+        "Missing output": "foundry-tool-status-missing-output",
+        "Unexpected output": "foundry-tool-status-unexpected-output",
+    }
+    row_html = []
+    for row in table.to_dict("records"):
+        status = str(row.get("Status", ""))
+        row_html.append(
+            "<tr>"
+            f"<td class=\"foundry-tool-table-step\">{_h(row.get('Step', ''))}</td>"
+            f"<td class=\"foundry-tool-name\">{_h(row.get('Expected tool', ''))}</td>"
+            f"<td class=\"foundry-tool-name\">{_h(row.get('Output tool', ''))}</td>"
+            f"<td class=\"foundry-tool-status {status_class.get(status, '')}\">{_h(status)}</td>"
+            f"<td class=\"foundry-tool-args\" title=\"{_h(row.get('Output arguments', ''))}\">{_h(row.get('Output arguments', ''))}</td>"
+            "</tr>"
+        )
+
+    st.markdown(
+        "<div class=\"foundry-tool-table-wrap\">"
+        "<table class=\"foundry-tool-table\">"
+        "<colgroup>"
+        "<col style=\"width: 4.8rem;\" />"
+        "<col style=\"width: 14rem;\" />"
+        "<col style=\"width: 14rem;\" />"
+        "<col style=\"width: 8rem;\" />"
+        "<col style=\"width: 23.2rem;\" />"
+        "</colgroup>"
+        "<thead><tr>"
+        "<th>Step</th>"
+        "<th>Expected tool</th>"
+        "<th>Output tool</th>"
+        "<th>Status</th>"
+        "<th>Output arguments</th>"
+        "</tr></thead>"
+        f"<tbody>{''.join(row_html)}</tbody>"
+        "</table>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def render_tool_comparison(row, trace: list[dict] | None = None):
@@ -1314,7 +1486,7 @@ def render_tool_comparison(row, trace: list[dict] | None = None):
     c1.metric("Expected tools", len(get_expected_tool_names(row)))
     c2.metric("Output tools", len(get_output_tool_calls(row, trace)))
     c3.metric("Step matches", f"{ok_count}/{len(table)}")
-    st.dataframe(table, hide_index=True, use_container_width=True, height=min(360, 40 + 35 * len(table)))
+    render_tool_comparison_table(table)
 
 
 def render_trace_content(role: str, content):
@@ -1544,11 +1716,15 @@ _TRAIN_DEPENDENT_KEYS = [
 
 # Keys owned by the Eval view that must be cleared when the rollout changes.
 _EVAL_DEPENDENT_KEYS = [
+    "e_ds",
     "e_detail",
+    "eval_prompt_table",
     "eval_generation_score",
     "eval_generation_sort",
     "eval_generation_search",
     "eval_generation_cols",
+    "eval_compare_left",
+    "eval_compare_right",
 ]
 
 
@@ -1697,9 +1873,169 @@ def render_generation_browser(samples: pd.DataFrame, key_prefix: str):
                     )
 
 
+def render_prompt_group_browser(
+    rdf: pd.DataFrame,
+    *,
+    table_key: str,
+    trace_key_prefix: str,
+    generation_key_prefix: str,
+    compare_left_key: str,
+    compare_right_key: str,
+    empty_message: str,
+    default_selection_caption: str,
+):
+    if rdf.empty:
+        st.info(empty_message)
+        return
+
+    if "_reward" not in rdf.columns:
+        rdf = rdf.copy()
+        rdf["_reward"] = rdf["reward"].apply(extract_reward_score) if "reward" in rdf else pd.NA
+
+    prompts = []
+    for gidx, group in rdf.groupby("group_index", sort=True, dropna=False):
+        first = group.iloc[0]
+        prompt_text = extract_row_prompt_text(first)
+        n_correct = int((group["_reward"] == 1.0).sum()) if group["_reward"].notna().any() else 0
+        n_total = len(group)
+        prompts.append({
+            "group_index": gidx,
+            "prompt_text": prompt_text,
+            "raw_prompt": first.get("prompt", ""),
+            "metadata": first.get("metadata", {}),
+            "label": first.get("label", ""),
+            "n_correct": n_correct,
+            "n_total": n_total,
+            "avg_reward": group["_reward"].mean() if group["_reward"].notna().any() else None,
+            "unique_answers": add_generation_columns(group)["_answer"].fillna("").map(normalize_generation).nunique(),
+        })
+
+    st.subheader("Prompts")
+    prompt_df = pd.DataFrame(prompts)
+    if prompt_df.empty:
+        st.info(empty_message)
+        return
+
+    prompt_df["reward"] = prompt_df["avg_reward"].apply(format_float)
+    prompt_df["prompt_preview"] = prompt_df["prompt_text"].astype(str).str[:120]
+
+    selection = st.dataframe(
+        prompt_df[["group_index", "prompt_preview", "reward"]].rename(columns={
+            "group_index": "Group",
+            "prompt_preview": "Prompt",
+            "reward": "Reward",
+        }),
+        height=min(400, 40 + 35 * len(prompt_df)),
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key=table_key,
+    )
+
+    selected_rows = selection.selection.rows if selection and selection.selection else []
+    sel_idx = selected_rows[0] if selected_rows else 0
+    if not selected_rows:
+        st.caption(default_selection_caption)
+
+    prompt_info = prompts[sel_idx]
+    group_samples = rdf[rdf["group_index"] == prompt_info["group_index"]].reset_index(drop=True)
+
+    st.divider()
+
+    n_correct = prompt_info["n_correct"]
+    n_total = prompt_info["n_total"]
+    st.subheader(f"Prompt #{prompt_info['group_index']} - {n_correct}/{n_total} correct")
+
+    with st.expander("Full prompt", expanded=False):
+        if str(prompt_info["raw_prompt"]).strip():
+            render_prompt_full(prompt_info["raw_prompt"])
+        else:
+            st.caption("This rollout row has an empty prompt field; using metadata to identify the scenario.")
+        render_rollout_metadata(prompt_info)
+        label = prompt_info.get("label")
+        try:
+            label_is_empty = pd.isna(label)
+        except (TypeError, ValueError):
+            label_is_empty = False
+        if not label_is_empty and str(label).strip():
+            st.info(f"**Expected answer:** {label}")
+
+    trace_tab, overview_tab, generations_tab, compare_tab = st.tabs([
+        "Conversation trace",
+        "Variation overview",
+        "Generation browser",
+        "Side-by-side compare",
+    ])
+
+    with trace_tab:
+        trace_key = sample_key_fragment(prompt_info["group_index"])
+        render_conversation_trace_browser(group_samples, f"{trace_key_prefix}_{trace_key}")
+
+    with overview_tab:
+        render_variation_summary(group_samples)
+        st.caption("Use this view to quickly spot whether generations are converging or producing many distinct answers.")
+
+    with generations_tab:
+        render_generation_browser(group_samples, generation_key_prefix)
+
+    with compare_tab:
+        enriched_samples = add_generation_columns(group_samples)
+        n_gens = len(enriched_samples)
+
+        if n_gens < 2:
+            st.info("Only one generation for this prompt - nothing to compare.")
+        else:
+            compare_options = list(range(n_gens))
+
+            def _gen_label(i: int) -> str:
+                row = enriched_samples.iloc[i]
+                return f"[{i}] score {format_float(row['_reward'])} - {row.get('response_length', '—')} tokens"
+
+            picker_col_l, picker_col_r = st.columns(2)
+            left_idx = picker_col_l.selectbox(
+                "Left generation",
+                compare_options,
+                format_func=_gen_label,
+                key=compare_left_key,
+            )
+            right_idx = picker_col_r.selectbox(
+                "Right generation",
+                compare_options,
+                index=min(1, n_gens - 1),
+                format_func=_gen_label,
+                key=compare_right_key,
+            )
+
+            left_row = enriched_samples.iloc[left_idx]
+            right_row = enriched_samples.iloc[right_idx]
+
+            left_card, right_card = st.columns(2)
+
+            def _render_compare_card(row: pd.Series, side: str):
+                score = extract_reward_score(row.get("reward"))
+                color = reward_color(row.get("reward"))
+                length = row.get("response_length", "—")
+                st.markdown(f":{color}[**Score: {format_float(score)}**] · `{length}` tokens")
+                st.markdown(f"**{side} extracted answer**")
+                st.code(row["_answer"] or "(empty)")
+                st.markdown("**Full generation**")
+                st.text(row.get("response", ""))
+
+            with left_card.container(border=True):
+                _render_compare_card(left_row, "Left")
+            with right_card.container(border=True):
+                _render_compare_card(right_row, "Right")
+
+
 # ---------------------------------------------------------------------------
 # Load data
 # ---------------------------------------------------------------------------
+
+if "refresh" in st.query_params:
+    st.cache_data.clear()
+    clear_uploaded_file_state()
+    st.query_params.clear()
+    st.rerun()
 
 log_dir = get_log_dir()
 train_file_infos = discover_jsonl_files(log_dir, "train_rollout")
@@ -1719,11 +2055,6 @@ sidebar_bottom = st.sidebar.container()
 
 with sidebar_header:
     render_foundry_sidebar_brand(log_dir, len(train_file_infos), len(eval_file_infos))
-
-    if st.button("Refresh folder"):
-        st.cache_data.clear()
-        clear_uploaded_file_state()
-        st.rerun()
 
 upload_key = get_upload_key()
 uploaded_files = get_uploaded_files_from_state(upload_key)
@@ -1995,16 +2326,21 @@ elif view == "Eval":
         for _key in _EVAL_DEPENDENT_KEYS:
             st.session_state.pop(_key, None)
 
+    rollout_eval_df = eval_df[eval_df["rollout_id"] == selected_rollout].copy()
     if "dataset" in eval_df.columns:
-        datasets = sorted(eval_df["dataset"].unique())
-        selected_dataset = sidebar_controls.selectbox("Dataset", datasets, key="e_ds")
-        edf = eval_df[
-            (eval_df["rollout_id"] == selected_rollout)
-            & (eval_df["dataset"] == selected_dataset)
-        ].copy()
+        datasets = sorted(rollout_eval_df["dataset"].dropna().unique())
+        if datasets:
+            dataset_key = f"e_ds_{sample_key_fragment(selected_rollout)}"
+            if st.session_state.get(dataset_key) not in datasets:
+                st.session_state.pop(dataset_key, None)
+            selected_dataset = sidebar_controls.selectbox("Dataset", datasets, key=dataset_key)
+            edf = rollout_eval_df[rollout_eval_df["dataset"] == selected_dataset].copy()
+        else:
+            selected_dataset = None
+            edf = rollout_eval_df
     else:
         selected_dataset = None
-        edf = eval_df[eval_df["rollout_id"] == selected_rollout].copy()
+        edf = rollout_eval_df
 
     edf["_reward"] = edf["reward"].apply(extract_reward_score)
 
@@ -2018,16 +2354,19 @@ elif view == "Eval":
         [
             ("Source", log_dir),
             ("Dataset", selected_dataset or "All"),
+            ("Prompts", str(edf["group_index"].nunique())),
             ("Samples", str(len(edf))),
         ],
     )
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Samples", len(edf))
+    prompt_count = edf["group_index"].nunique()
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Prompts", prompt_count)
+    c2.metric("Samples/Prompt", int(len(edf) / max(prompt_count, 1)))
     accuracy = edf["_reward"].mean() if edf["_reward"].notna().any() else None
-    c2.metric("Accuracy", format_percentage(accuracy) if accuracy is not None else "—")
+    c3.metric("Accuracy", format_percentage(accuracy) if accuracy is not None else "—")
     trunc = edf["truncated"].sum() if "truncated" in edf else 0
-    c3.metric("Truncated", int(trunc))
+    c4.metric("Truncated", int(trunc))
 
     # -- Accuracy trend --
     with st.expander("Accuracy trend across all eval rollouts", expanded=False):
@@ -2071,71 +2410,14 @@ elif view == "Eval":
             st.caption("No accuracy values are available for this trend.")
 
     st.divider()
-
-    # -- Sample list --
-    if "prompt" not in edf.columns:
-        st.info("Eval samples don't include prompt/response text.")
-        st.stop()
-
-    edf["_prompt_text"] = edf.apply(extract_row_prompt_text, axis=1)
-    edf["prompt_preview"] = edf["_prompt_text"].str[:120]
-
-    st.subheader("Samples")
-    eval_display = edf[["sample_idx", "prompt_preview", "reward", "label"]].copy()
-    eval_display["reward"] = eval_display["reward"].apply(format_reward_value)
-    st.dataframe(
-        eval_display.rename(columns={
-            "sample_idx": "#",
-            "prompt_preview": "Prompt",
-            "reward": "Reward",
-            "label": "Label",
-        }),
-        height=min(400, 40 + 35 * len(edf)),
-        hide_index=True,
+    render_prompt_group_browser(
+        edf,
+        table_key="eval_prompt_table",
+        trace_key_prefix="eval_trace",
+        generation_key_prefix="eval_generation",
+        compare_left_key="eval_compare_left",
+        compare_right_key="eval_compare_right",
+        empty_message="No eval prompt groups were found for this rollout.",
+        default_selection_caption="Showing the first eval prompt by default. Select another row to inspect a different prompt.",
     )
-
-    st.divider()
-
-    # -- Detail view --
-    selected_idx = st.selectbox(
-        "Select sample to inspect",
-        range(len(edf)),
-        format_func=lambda i: f"#{edf.iloc[i]['sample_idx']} — {edf.iloc[i].get('_prompt_text', '')[:80]}...",
-        key="e_detail",
-    )
-
-    row = edf.iloc[selected_idx]
-    reward = row.get("reward")
-    color = reward_color(reward)
-
-    with st.expander("Prompt", expanded=True):
-        if str(row.get("prompt", "")).strip():
-            render_prompt_full(row.get("prompt", ""))
-        else:
-            st.caption("This rollout row has an empty prompt field; using metadata to identify the scenario.")
-        render_rollout_metadata(row)
-        if row.get("label"):
-            st.info(f"**Expected answer:** {row['label']}")
-
-    with st.container(border=True):
-        cols = st.columns([8, 2])
-        cols[1].markdown(f":{color}[**Reward: {format_reward_value(reward)}**]")
-        cols[0].text(row.get("response", ""))
-
-    with st.expander("Tool comparison", expanded=False):
-        render_sample_diagnostics(row, "eval_detail_sample", show_system_control=True)
-
-    if "group_index" in edf.columns:
-        sibling_samples = edf[edf["group_index"] == row["group_index"]].reset_index(drop=True)
-        if len(sibling_samples) > 1:
-            st.divider()
-            st.subheader("Generation variation for this eval sample")
-            trace_tab, overview_tab, generations_tab = st.tabs(["Conversation trace", "Variation overview", "Generation browser"])
-            with trace_tab:
-                trace_key = sample_key_fragment(row.get("group_index", "eval"))
-                render_conversation_trace_browser(sibling_samples, f"eval_trace_{trace_key}")
-            with overview_tab:
-                render_variation_summary(sibling_samples)
-            with generations_tab:
-                render_generation_browser(sibling_samples, "eval_generation")
 

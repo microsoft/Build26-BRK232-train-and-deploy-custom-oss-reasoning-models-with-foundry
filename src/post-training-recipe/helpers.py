@@ -41,7 +41,7 @@ COMPUTE_CLUSTER_GPU: str = "testfoundrywcusclustergpu"
 
 COMPUTE_CLUSTER_CPU: str = "testfoundrywcusclustercpu"
 
-COMPUTE_CLUSTER_A100: str = "testfoundrywcusclustera100"
+COMPUTE_CLUSTER_A100: str = "Atlas100"
 
 _SUBSCRIPTION_ID = _env(
     "FOUNDRY_TRAININGJOB__SUBSCRIPTION_ID",
@@ -241,6 +241,13 @@ def body_to_command_job(body: Mapping[str, Any]):
         "resources": resources,
         "tags": props.get("tags") or {},
         "user_assigned_identity_id": props.get("userAssignedIdentityId"),
+        # Foundry job services (e.g. ``foundry-rollout-browser`` Streamlit
+        # sidecar on port 8501). Must be forwarded explicitly because
+        # ``CommandJob`` does not pull through unknown fields from the body
+        # dict — without this line the registration in
+        # ``submit_job.py:_build_body_from_ids`` is silently dropped and the
+        # portal never surfaces the public endpoint.
+        "services": props.get("services") or None,
     }
     if props.get("distribution"):
         cj_kwargs["distribution"] = props["distribution"]
@@ -591,4 +598,3 @@ def build_retail_request_body(
             },
         }
     }
-

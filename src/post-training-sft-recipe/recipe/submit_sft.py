@@ -1,4 +1,4 @@
-"""Submit a Zava SFT / async-GRPO Foundry training job.
+"""Submit a Retail SFT / async-GRPO Foundry training job.
 
 Recovered from the actual payload used to submit `zv-rft-32b-sft-h-mf2y`
 (and `zv-rft-32b-sft-a-3nwl`). The original ad-hoc submission was lost, so
@@ -52,13 +52,13 @@ CLUSTERS = {
 
 # Foundry dataset URIs currently in use (bump versions when you re-upload).
 DATASETS = {
-    "train_dataset": "azureai://accounts/foundry-training-pilot/projects/foundry-training-pilot-proj/data/zava-train-data/versions/1780023586082",
-    "code_dataset":  "azureai://accounts/foundry-training-pilot/projects/foundry-training-pilot-proj/data/zava-code/versions/1780023586082",
-    "sft_lora_dataset": "azureai://accounts/foundry-training-pilot/projects/foundry-training-pilot-proj/data/zava-sft-qwen3-32b-a100-checkpoints-1779968060624/versions/20260528113423611",
+    "train_dataset": "azureai://accounts/foundry-training-pilot/projects/foundry-training-pilot-proj/data/retail-train-data/versions/1780023586082",
+    "code_dataset":  "azureai://accounts/foundry-training-pilot/projects/foundry-training-pilot-proj/data/retail-code/versions/1780023586082",
+    "sft_lora_dataset": "azureai://accounts/foundry-training-pilot/projects/foundry-training-pilot-proj/data/retail-sft-qwen3-32b-a100-checkpoints-1779968060624/versions/20260528113423611",
 }
 
 # ENV_IMAGE = "mcr.microsoft.com/azureml/curated/slime-pytorch-2.9-cuda12.8:3" # have dependency issues.
-ENV_IMAGE = "fdpcommandbtestcanary.azurecr.io/azureml/slime-310:9-candidate-v5-cp2-trace1"
+ENV_IMAGE = "fdpcommandbtestcanary.azurecr.io/azureml/slime-310:build-demo-26-1"
 ENV_VARS = {
     "AZUREML_CR_BOOTSTRAPPER_CONFIG_OVERRIDE": json.dumps({
         "capabilities_registry": {
@@ -68,7 +68,7 @@ ENV_VARS = {
         }
     }),
     "SINGULARITY_SIDECAR_CONSOLIDATION": "false",
-    "PYTHONPATH": "/opt/zava:/opt/Megatron-LM/",
+    "PYTHONPATH": "/opt/retail:/opt/Megatron-LM/",
     "CUDA_DEVICE_MAX_CONNECTIONS": "1",
     "NCCL_NVLS_ENABLE": "1",
     "SLIME_HF_MODEL_ID": "Qwen/Qwen3-32B",
@@ -83,18 +83,18 @@ ENV_VARS = {
     "TAUBENCH_SOLO_MODE": "true",
     "TAUBENCH_USER_LLM": "unused",
     "TAUBENCH_USER_LLM_TEMPERATURE": "0.0",
-    "ZAVA_MAX_TRAJ_TOKENS": "16384",
-    "ZAVA_MAX_TURNS": "10",
-    "ZAVA_ENV_STEP_TIMEOUT": "30",
-    "TAUBENCH_DOMAIN": "zava",
+    "RETAIL_MAX_TRAJ_TOKENS": "16384",
+    "RETAIL_MAX_TURNS": "10",
+    "RETAIL_ENV_STEP_TIMEOUT": "30",
+    "TAUBENCH_DOMAIN": "retail",
 }
 
 # Training command. ${{inputs.*}} / ${{outputs.*}} are Foundry placeholders
 # that the runtime substitutes before launching bash.
 COMMAND = (
-    'python "${{inputs.code_dataset}}/zava_slime_train.py"'
-    ' --train_data "${{inputs.train_dataset}}/zava_train.jsonl"'
-    ' --eval_data "${{inputs.train_dataset}}/zava_val.jsonl"'
+    'python "${{inputs.code_dataset}}/retail_slime_train.py"'
+    ' --train_data "${{inputs.train_dataset}}/retail_train.jsonl"'
+    ' --eval_data "${{inputs.train_dataset}}/retail_val.jsonl"'
     ' --output_dir "${{outputs.checkpoints}}"'
     ' --rollout_log_dir "${{outputs.rollouts}}"'
     ' --model_output "${{outputs.model_output}}"'
@@ -139,8 +139,8 @@ def build_payload(cluster_key: str, instance_count: int = 4) -> dict:
             "description": "Taubench retail agent: async GRPO fine-tuning with env reward",
             "tags": {
                 "env": "PILOT",
-                "scenario": "zava-rft",
-                "domain": "zava",
+                "scenario": "retail-sft",
+                "domain": "retail",
                 "variant": "image-bake",
                 "agent": "Qwen/Qwen3-32B",
             },

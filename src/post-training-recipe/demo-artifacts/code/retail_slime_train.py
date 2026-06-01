@@ -193,7 +193,7 @@ def build_slime_command(args):
         "--global-batch-size", str(args.global_batch_size),
         "--balance-data",
         "--eval-interval", str(args.eval_interval),
-        "--eval-prompt-data", "retail-val", args.eval_data,
+        "--eval-prompt-data", "grader_score", args.eval_data,
         "--n-samples-per-eval-prompt", str(args.n_samples_per_eval_prompt),
         "--eval-max-response-len", str(args.eval_max_response_len),
         "--eval-top-p", str(args.eval_top_p),
@@ -232,6 +232,11 @@ def build_slime_command(args):
         "--attention-backend", "flash",
         "--custom-rollout-log-function-path", "rollout_logger.log_rollout_data",
         "--custom-eval-rollout-log-function-path", "rollout_logger.log_eval_rollout_data",
+        # Bridge slime's wandb/TB log path to AzureML so train/kl_loss and
+        # train/entropy_loss reach the Foundry portal Metrics tab (filtered
+        # by ROLLOUT_VERBOSE_LOGS — only the 4 customer-facing scalars land
+        # when verbose_logs=False).
+        "--custom-megatron-init-path", "rollout_logger.init_slime_metric_bridge",
     ]
 
     if args.qk_layernorm:
@@ -304,13 +309,23 @@ def run_training(args):
     aml_env_vars = {k: v for k, v in os.environ.items() if k.startswith("AZUREML")}
     for key in ("PROJECT_ENDPOINT", "MANAGED_IDENTITY_CLIENT_ID",
                 "RETAIL_USER_LLM", "RETAIL_USER_LLM_TEMPERATURE",
-                "RETAIL_MAX_TURNS", "RETAIL_SOLO_MODE"):
+                "RETAIL_MAX_TURNS", "RETAIL_SOLO_MODE",
+                "ROLLOUT_VERBOSE_LOGS"):
         val = os.environ.get(key, "")
         if val:
             aml_env_vars[key] = val
 
     runtime_env = {
         "working_dir": code_dataset_dir,
+        # Canary slime-310:build-demo-26-1 ships compatible numpy + transformer_engine
+        # baked in, so no per-actor pip install is needed. `pip_check=False` and
+        # `packages: []` keep the runtime_env block in place (for the
+        # `--extra-index-url` channel registration if a future image needs it)
+        # without forcing any installs.
+        "pip": {
+            "packages": [],
+            "pip_check": False,
+        },
         "env_vars": {
             **aml_env_vars,
             "PYTHONPATH": f"{code_dataset_dir}:/opt/retail:/opt/Megatron-LM/:{os.environ.get('PYTHONPATH', '')}",
@@ -445,7 +460,7 @@ def parse_args():
     p.add_argument(
         "--sft_lora_path", default=None,
         help=(
-            "Optional: path to an SFT LoRA adapter folder (mounted as a "
+            "Optional: path to an SFT LoRa adapter folder (mounted as a "
             "Foundry asset input).  When set, the script merges the LoRA "
             "into the base HF model and uses the merged checkpoint as "
             "--hf_checkpoint (slime needs a full HF model)."
@@ -579,6 +594,10 @@ def install_custom_pip_packages():
         logger.warning(f"numpy pin failed: {e.stderr[:400]}")
     except Exception as e:
         logger.warning(f"numpy pin unexpected error: {e}")
+
+    # transformer_engine is baked into the canary slime-310:build-demo-26-1 image
+    # (cu12-compatible wheels for both the `transformer-engine` metapackage and
+    # the `transformer-engine-cu12` backend). Skip the runtime pip install.
 
     required_packages = [
         ("azureml-core", "azureml.core"),

@@ -131,7 +131,7 @@ def _flatten_sample(rec: dict, kind: str) -> dict:
         "rollout_id": rec.get("rollout_id"),
         "sample_idx": rec.get("sample_idx"),
         "group_index": rec.get("group_index"),
-        # Identifiers (vary by run type — tau2 vs zava vs others)
+        # Identifiers (vary by run type — tau2 vs retail vs others)
         "task_id": meta.get("task_id"),
         "scenario_id": meta.get("scenario_id") or meta.get("task_id"),
         "order_id": meta.get("order_id"),
@@ -148,7 +148,7 @@ def _flatten_sample(rec: dict, kind: str) -> dict:
         "n_env_assertions": reward.get("n_env_assertions"),
         "mean_communicate_reward": reward.get("mean_communicate_reward"),
         "mean_nl_assertion_reward": reward.get("mean_nl_assertion_reward"),
-        # Zava-specific (only present in zava runs)
+        # Retail-specific (only present in retail runs)
         "n_amount_matches": reward.get("n_amount_matches"),
         "n_reason_matches": reward.get("n_reason_matches"),
         "n_parsed_actions": reward.get("n_parsed_actions"),

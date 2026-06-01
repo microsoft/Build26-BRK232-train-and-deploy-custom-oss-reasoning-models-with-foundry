@@ -4,10 +4,10 @@ Hides path setup, submission, and log-streaming plumbing so the notebook cells
 stay one-liners.
 
 Usage in notebook:
-    from slime_rl_setup import ENV, setup_env, submit_job, stream_logs
+    from slime_rl_setup import ENV, setup_env, submit_job, job_status
     setup_env(project_endpoint="https://<account>.services.ai.azure.com/api/projects/<project>")
     submit_job(cluster_name="<your-compute-cluster>")
-    stream_logs()
+    job_status()   # watches job status via Foundry GET /jobs/{name}; opens portal for log content
 
 KERNEL / DEPENDENCY REQUIREMENTS
 --------------------------------
@@ -101,6 +101,19 @@ def setup_env(
             "(or both left as None to keep the recipe's pilot defaults)."
         )
 
+    # Auto-pick the storage connection name based on the project, since Foundry
+    # enforces account-scoped unique connection names: two projects under the
+    # same account cannot both own a connection called "fdpcommandjobdefaultbyos-
+    # connection", so Build-26-Demo-Project had to be created with the
+    # "-bdp-connection" suffix. Caller can still override explicitly.
+    if storage_connection_name is None:
+        _KNOWN_STORAGE_CONNECTIONS = {
+            "Build-26-Demo-Proj":    "fdpcommandjobdefaultbyos-connection",      # original sibling
+            "Build-26-Demo-Project": "fdpcommandjobdefaultbyos-bdp-connection",  # second project on same account
+        }
+        if project_name in _KNOWN_STORAGE_CONNECTIONS:
+            storage_connection_name = _KNOWN_STORAGE_CONNECTIONS[project_name]
+
     nb_dir = Path.cwd().resolve()
     e = SimpleNamespace(
         nb_dir=nb_dir,
@@ -134,7 +147,7 @@ KEY_NEEDLES = (
     "JOB_NAME_PREFIX", "NUM_ROLLOUTS", "MODEL_DATASET_ID", "SFT_LORA_DATASET_ID",
     "HF_MODEL_ID", "COMPUTE_CLUSTER", "N_NODES",
     "ROLLOUT_BATCH_SIZE", "N_SAMPLES_PER_PROMPT", "GLOBAL_BATCH_SIZE",
-    "LEARNING_RATE", "KL_LOSS_COEF", "MAX_TOKENS_PER_GPU",
+    "LEARNING_RATE", "KL_LOSS_COEF", "EPS_CLIP_HIGH", "MAX_TOKENS_PER_GPU",
 )
 
 
@@ -164,6 +177,7 @@ _PARAM_GROUPS = {
         "num_rollouts":      "NUM_ROLLOUTS",
         "kl_loss_coef":      "KL_LOSS_COEF",
         "entropy_coef":      "ENTROPY_COEF",
+        "eps_clip_high":     "EPS_CLIP_HIGH",
     },
     "rollout": {
         "rollout_num_gpus":            "ROLLOUT_NUM_GPUS",
@@ -197,6 +211,7 @@ def submit_job(
     cluster_name: str,
     warm_start: bool = True,
     sft_lora_uri: str | None = None,
+    instance_type: str | None = None,
     sampling: dict | None = None,
     training: dict | None = None,
     rollout: dict | None = None,
@@ -213,16 +228,24 @@ def submit_job(
         Submission fails with a clear Azure error if the cluster does not
         exist (or your identity has no access to it).
     warm_start : bool, default True
-        If True, seed the RFT run from an existing SFT LoRA adapter. You must
+        If True, seed the RFT run from an existing SFT LoRa adapter. You must
         provide its asset URI via ``sft_lora_uri``. If False, perform a
         cold-start RFT run directly on the base model with no SFT seed (and
         ``sft_lora_uri`` is ignored).
     sft_lora_uri : str, optional
-        The Foundry dataset URI of the SFT LoRA checkpoint to warm-start
+        The Foundry dataset URI of the SFT LoRa checkpoint to warm-start
         from (e.g. ``azureai://accounts/<acct>/projects/<proj>/data/<name>/versions/<ver>``).
         Required when ``warm_start=True``. Produce one by running the
         companion SFT notebook (``../post-training-sft-recipe/retail_sft_submit.ipynb``)
         and copying the resulting checkpoint asset URI.
+    instance_type : str, optional
+        Singularity/AISC instance type SKU (e.g.
+        ``"Singularity.ND96r_H100_v5"`` or
+        ``"Singularity.ND96am_A100_v4-n1"``). When omitted, the recipe
+        default (``INSTANCE_TYPE`` in ``post-training-recipe/submit_job.py``)
+        is used. Override this when the cluster's default SKU has zero
+        Singularity quota in your account/SLA tier or when you want to
+        target a specific GPU generation.
     sampling : dict, optional
         Per-rollout sampling overrides. Recognised keys:
         ``rollout_temperature``, ``rollout_max_response_len``,
@@ -299,11 +322,20 @@ def submit_job(
     )
     print(f"Compute cluster: {cluster_name}")
 
+    if instance_type:
+        if "<" in str(instance_type) or not str(instance_type).strip():
+            raise ValueError(
+                f"instance_type looks like a placeholder: {instance_type!r}. "
+                "Pass a real Singularity SKU (e.g. 'Singularity.ND96r_H100_v5')."
+            )
+        recipe_submit.INSTANCE_TYPE = instance_type
+        print(f"Instance type override: {instance_type}")
+
     if warm_start:
         if not sft_lora_uri or not str(sft_lora_uri).strip():
             raise ValueError(
                 "warm_start=True requires sft_lora_uri — pass the Foundry "
-                "asset URI of your SFT LoRA checkpoint "
+                "asset URI of your SFT LoRa checkpoint "
                 "(e.g. 'azureai://accounts/<acct>/projects/<proj>/data/"
                 "<name>/versions/<ver>'). Produce one by running the "
                 "companion SFT notebook (../post-training-sft-recipe/"
@@ -311,12 +343,14 @@ def submit_job(
                 "to cold-start from the base model."
             )
         recipe_submit.SFT_LORA_DATASET_ID = sft_lora_uri
-        print(f"Warm start: seeding from SFT LoRA {sft_lora_uri}")
+        recipe_submit.JOB_NAME_PREFIX = "Retail-SFT-RFT-Qwen14B"
+        print(f"Warm start: seeding from SFT LoRa {sft_lora_uri}")
     else:
         if sft_lora_uri:
             print("Note: sft_lora_uri is ignored when warm_start=False.")
         recipe_submit.SFT_LORA_DATASET_ID = None
-        print("Cold start: no SFT LoRA seed will be used.")
+        recipe_submit.JOB_NAME_PREFIX = "Retail-RFT-Qwen14B"
+        print("Cold start: no SFT LoRa seed will be used.")
 
     _apply_overrides(recipe_submit, "sampling", sampling)
     _apply_overrides(recipe_submit, "training", training)
@@ -358,26 +392,51 @@ def submit_job(
     return job_name
 
 
-# ──────────────────── 4. Stream job logs via azure-ai-projects SDK ────────────────────────────
-def stream_logs(job_id: str | None = None) -> None:
-    """Tail the running job's log files to stdout until the job reaches a
-    terminal state, using ``AIProjectClient.beta.jobs.stream()``.
+# ──────────────────── 4. Watch job status via azure-ai-projects SDK ───────────────────────────
+def job_status(
+    job_id: str | None = None,
+    poll_seconds: float = 30.0,
+    timeout_seconds: float | None = None,
+) -> str:
+    """Watch a Foundry training job until it reaches a terminal state.
+
+    Calls only ``AIProjectClient.beta.jobs.get(name=...)`` — the Foundry
+    job-resource endpoint (``GET /jobs/{name}``). That endpoint does **not**
+    require ``Microsoft.MachineLearningServices/workspaces/experiments/runs/read``,
+    so it works for identities that are not AzureML workspace contributors.
+
+    The SDK's ``jobs.stream()`` and ``jobs.download()`` cannot be used here:
+    both go through ``/jobs/{name}/history/runs/...``, which is the AzureML
+    experiments scope and requires the role above. Log file *content* is only
+    reachable via the Foundry portal in that case.
 
     Parameters
     ----------
     job_id : str, optional
-        The job name to tail. Defaults to the JOB_ID returned by the most
-        recent ``submit_job()`` call (stored on ``ENV.job_id``).
+        The job name to watch. Defaults to ``ENV.job_id`` from the most
+        recent ``submit_job()`` call.
+    poll_seconds : float, default 30
+        Interval between ``jobs.get`` calls.
+    timeout_seconds : float, optional
+        Stop watching after this many seconds. ``None`` waits indefinitely.
+
+    Returns
+    -------
+    str
+        The final job status (lower-cased), e.g. ``"completed"``.
 
     Raises
     ------
     RuntimeError
-        If the job ends in a failed state (re-raised by the SDK).
+        If the job reaches the ``failed`` terminal state.
     """
-    job_id = job_id or ENV.job_id
+    import time
+    from datetime import datetime, timezone
+
+    job_id = job_id or getattr(ENV, "job_id", None)
     if not job_id:
         print("No JOB_ID set. Pass job_id= or run submit_job() first.")
-        return
+        return ""
 
     sys.path.insert(0, str(ENV.recipe_dir))
     import submit_job as recipe_submit  # type: ignore[import-not-found]
@@ -394,63 +453,134 @@ def stream_logs(job_id: str | None = None) -> None:
             "azure-sdk-for-python/pypi/simple"
         ) from e
 
-    # Use the project endpoint from setup_env if available, else fall back to the recipe default.
-    project_endpoint = getattr(ENV, "project_endpoint", None) or recipe_submit.PROJECT_ENDPOINT
-    print(f"Streaming logs for {job_id} (this blocks until the job reaches a terminal state)...")
+    # Mirror the SDK's terminal-state set; kept local so we don't depend on
+    # azure.ai.projects' internal _job_helper constants.
+    terminal = {"completed", "failed", "canceled", "cancelled",
+                "notresponding", "paused", "unknown"}
+
+    project_endpoint = (
+        getattr(ENV, "project_endpoint", None) or recipe_submit.PROJECT_ENDPOINT
+    )
+
+    def _ts() -> str:
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+
+    print(f"Watching job: {job_id}")
+    print(f"Endpoint:     {project_endpoint}")
+    print(
+        "Note: log file content is served from the AzureML experiments scope "
+        "(/jobs/<name>/history/runs/...) which requires "
+        "Microsoft.MachineLearningServices/workspaces/experiments/runs/read. "
+        "If that role is not granted to your identity, this watcher will only "
+        "print status transitions and the portal URL — open the portal to view "
+        "live driver/user logs in the browser."
+    )
+
+    start = time.time()
+    last_status: str | None = None
+    portal_printed = False
+
     with (
         DefaultAzureCredential() as credential,
-        AIProjectClient(endpoint=project_endpoint,
-                        credential=credential) as project_client,
+        AIProjectClient(endpoint=project_endpoint, credential=credential) as client,
     ):
-        project_client.beta.jobs.stream(name=job_id)
+        while True:
+            try:
+                job = client.beta.jobs.get(name=job_id)
+            except Exception as exc:  # noqa: BLE001 — surface and retry transient errors
+                print(f"[{_ts()}] jobs.get failed: {exc!r} — retrying in {poll_seconds:.0f}s")
+                time.sleep(poll_seconds)
+                continue
+
+            status = (getattr(job, "status", None) or "").lower() or "unknown"
+
+            if not portal_printed:
+                portal = getattr(job, "foundry_portal_url", None)
+                if portal:
+                    portal = portal.replace("/build/train/jobs/", "/build/train/custom-jobs/")
+                    print(f"Portal (live logs): {portal}")
+                portal_printed = True
+
+            if status != last_status:
+                print(f"[{_ts()}] status: {last_status or '<initial>'} → {status}")
+                last_status = status
+
+            if status in terminal:
+                print(f"[{_ts()}] terminal state reached: {status}")
+                if status == "failed":
+                    raise RuntimeError(
+                        f"Job '{job_id}' ended in 'failed' state. "
+                        f"Open the portal URL above to inspect driver/user logs."
+                    )
+                return status
+
+            if timeout_seconds is not None and (time.time() - start) > timeout_seconds:
+                print(
+                    f"[{_ts()}] watch timed out after {timeout_seconds:.0f}s "
+                    f"(current status: {status}). Job continues running on the cluster."
+                )
+                return status
+
+            time.sleep(poll_seconds)
 
 
-# ──────────────────── 5. SFT LoRA pre-training step ──────────────────────────
-# Reproduces the proven `zava-sft-qwen3-14b-a100-hp25` SFT-LoRA job
-# (sft_tau2.py + transformers/trl/peft on a single H100 node).
-# The code + data are already registered as Foundry assets under
-# `zava-sft-qwen3-14b-a100-{code,data}/versions/20260530011712` in the
-# Build-26-Demo-Proj project, so we reuse those URIs directly — no upload
-# needed. Output `checkpoints` becomes the LoRA adapter URI that the
-# subsequent RFT call consumes via `sft_lora_uri=...`.
-SFT_DEFAULTS = SimpleNamespace(
-    image="fdpcommandbtestcanary.azurecr.io/azureml/slime-310:9-candidate-v5-cp2-trace1",
-    code_uri=("azureai://accounts/build-26-demo/projects/Build-26-Demo-Proj"
-              "/data/zava-sft-qwen3-14b-a100-code/versions/20260530011712"),
-    train_uri=("azureai://accounts/build-26-demo/projects/Build-26-Demo-Proj"
-               "/data/zava-sft-qwen3-14b-a100-data/versions/20260530011712"),
-    train_filename="zava_train_sft_v6.jsonl",
-    base_model="Qwen/Qwen3-14B",
-    instance_type="Singularity.ND96r_H100_v5",
-    # sft_tau2.py knobs that match hp25 (only `epochs` differs by default)
-    batch_size=1, grad_accum=16, lr="2e-05", max_seq_len=4096,
-    lora_r=64, lora_alpha=128, lora_dropout=0.05,
-    target_modules="qwen", val_frac=0, logging_steps=2,
-    save_strategy="epoch",
-)
+# ──────────────────── 5. SFT LoRa pre-training step ──────────────────────────
+
+# No project-specific defaults — every URI / image / cluster value is supplied
+# by the notebook, so the helper works against any Foundry project that has
+# the SFT code + data uploaded as datasets and a compatible training image.
 
 
-def _sft_command(epochs: float) -> str:
-    """Build the bash command line for sft_tau2.py, mirroring hp25."""
-    d = SFT_DEFAULTS
+def _sft_command(
+    *,
+    train_filename: str,
+    base_model: str,
+    epochs: float,
+    batch_size: int,
+    grad_accum: int,
+    lr: str,
+    max_seq_len: int,
+    lora_r: int,
+    lora_alpha: int,
+    lora_dropout: float,
+    target_modules: str,
+    val_frac: float,
+    logging_steps: int,
+    save_strategy: str,
+    extra_pip: str,
+) -> str:
+    """Build the bash command line for sft_retail.py."""
+    # We wrap the whole pipeline in `bash -c '...'`. Pip specifiers that contain
+    # shell metacharacters (`<`, `>`) MUST be single-quoted so bash treats them
+    # as one literal argument. Since the outer quoting is already single, we
+    # use the canonical `'\''` escape (close-quote, escaped-quote, reopen-quote)
+    # — written as raw Python strings below for readability.
+    q = r"'\''"  # one literal single quote inside a `'...'` block
     pip_pkgs = (
-        "'transformers>=4.51,<5' trl==0.11.4 peft==0.13.2 "
-        "'datasets>=2.21,<3' 'accelerate>=1.0' 'bitsandbytes>=0.43' azureml-core"
+        f"{q}transformers>=4.51,<5{q} trl==0.11.4 peft==0.13.2 "
+        f"{q}datasets>=2.21,<3{q} {q}accelerate>=1.0{q} {q}bitsandbytes>=0.43{q} azureml-core"
     )
+    if extra_pip:
+        pip_pkgs = pip_pkgs + " " + extra_pip
     return (
         "bash -c '"
-        "pip install --quiet --upgrade pip "
-        f"&& pip install --quiet {pip_pkgs} "
-        "&& python \"${{inputs.code_dataset}}/sft_tau2.py\" "
-        f"--train-jsonl \"${{{{inputs.train_dataset}}}}/{d.train_filename}\" "
-        f"--base-model {d.base_model} "
-        "--output-dir \"${{outputs.checkpoints}}\" "
-        f"--epochs {epochs} --batch-size {d.batch_size} "
-        f"--grad-accum {d.grad_accum} --lr {d.lr} --max-seq-len {d.max_seq_len} "
-        f"--lora-r {d.lora_r} --lora-alpha {d.lora_alpha} "
-        f"--lora-dropout {d.lora_dropout} --target-modules {d.target_modules} "
-        f"--val-frac {d.val_frac} --logging-steps {d.logging_steps} "
-        f"--save-strategy {d.save_strategy}"
+        # The PTCA base image's site-packages is owned by root, but the training
+        # container runs as a non-root user. Install user-locally (~/.local/...)
+        # so the freshly-pinned versions take precedence over the image defaults.
+        # Use `python -m pip` for the second install so we invoke the just-
+        # upgraded pip from ~/.local/bin without depending on PATH ordering.
+        "pip install --quiet --user --upgrade pip "
+        f"&& python -m pip install --quiet --user {pip_pkgs} "
+        '&& python "${{inputs.code_dataset}}/sft_retail.py" '
+        f'--train-jsonl "${{{{inputs.train_dataset}}}}/{train_filename}" '
+        f"--base-model {base_model} "
+        '--output-dir "${{outputs.checkpoints}}" '
+        f"--epochs {epochs} --batch-size {batch_size} "
+        f"--grad-accum {grad_accum} --lr {lr} --max-seq-len {max_seq_len} "
+        f"--lora-r {lora_r} --lora-alpha {lora_alpha} "
+        f"--lora-dropout {lora_dropout} --target-modules {target_modules} "
+        f"--val-frac {val_frac} --logging-steps {logging_steps} "
+        f"--save-strategy {save_strategy}"
         "'"
     )
 
@@ -465,60 +595,105 @@ def _compute_id_from_cluster(cluster_name: str) -> str:
 
 
 def submit_sft_lora(
+    *,
     cluster_name: str,
+    instance_type: str,
+    image: str,
+    code_uri: str,
+    train_uri: str,
+    train_filename: str,
+    base_model: str,
     epochs: float = 1.0,
     instance_count: int = 1,
     name: str | None = None,
+    display_name: str = "Retail-SFT-14B",
+    # Generic LoRA SFT training knobs (no project-specific defaults).
+    batch_size: int = 1,
+    grad_accum: int = 16,
+    lr: str = "2e-05",
+    max_seq_len: int = 4096,
+    lora_r: int = 64,
+    lora_alpha: int = 128,
+    lora_dropout: float = 0.05,
+    target_modules: str = "qwen",
+    val_frac: float = 0.0,
+    logging_steps: int = 2,
+    save_strategy: str = "epoch",
+    extra_pip: str = "",
 ) -> str:
-    """Submit the SFT-LoRA pre-training job (sft_tau2.py) on a single H100 node.
+    """Submit a single-node LoRA SFT job (``sft_retail.py``) and return the
+    submitted job name.
+
+    All Foundry-project / dataset / image references are required parameters
+    — the helper carries no project-specific defaults so the same code works
+    for any customer scenario.
 
     Parameters
     ----------
-    cluster_name : str, required
-        Name of the H100-class compute cluster (e.g.
-        ``"testfoundrywcusclustergpu"``) in your Foundry project.
+    cluster_name : str
+        Short name of the Foundry compute cluster (e.g. ``"my-h100-cluster"``).
+    instance_type : str
+        Singularity/AISC instance type (e.g. ``"Singularity.ND96r_H100_v5"``).
+    image : str
+        Container image reference for the training environment.
+    code_uri : str
+        ``azureai://...`` URI of the dataset folder containing ``sft_retail.py``.
+    train_uri : str
+        ``azureai://...`` URI of the dataset folder containing the training
+        JSONL file.
+    train_filename : str
+        Filename of the training JSONL within ``train_uri``.
+    base_model : str
+        Hugging Face model id of the base checkpoint.
     epochs : float, default 1.0
-        Number of training epochs for the LoRA adapter. Use ``1.0`` to keep
-        the demo turnaround tight; the production checkpoint used 5 epochs.
+        Number of training epochs for the LoRA adapter.
     instance_count : int, default 1
-        Number of nodes. sft_tau2.py is single-node — leave at 1.
+        Number of compute nodes (sft_retail.py is single-node — leave at 1).
     name : str, optional
-        Explicit job name. If omitted, a random 4-char suffix is appended to
-        ``"zava-sft-14b-e{epochs}"``.
+        Explicit job name. If omitted, ``"sft-lora-<hex>"`` is used.
+    batch_size, grad_accum, lr, max_seq_len, lora_r, lora_alpha, lora_dropout,
+    target_modules, val_frac, logging_steps, save_strategy : optional
+        Generic LoRA SFT knobs passed straight to sft_retail.py; defaults are
+        safe baselines for Qwen-class base models.
+    extra_pip : str, optional
+        Extra ``pip install`` packages (space-separated) for the bootstrap.
 
     Returns
     -------
     str
-        The submitted job name. Pass it to ``wait_for_sft_lora()`` to block
-        until completion and capture the output adapter URI.
+        The submitted job name.
     """
-    if not cluster_name or "<" in str(cluster_name):
-        raise ValueError("submit_sft_lora requires an explicit cluster_name")
+    for label, val in [
+        ("cluster_name", cluster_name), ("instance_type", instance_type),
+        ("image", image), ("code_uri", code_uri), ("train_uri", train_uri),
+        ("train_filename", train_filename), ("base_model", base_model),
+    ]:
+        if not val or "<" in str(val):
+            raise ValueError(f"submit_sft_lora requires an explicit {label}")
     if not getattr(ENV, "project_endpoint", None):
         raise RuntimeError("Call setup_env() before submit_sft_lora().")
 
     import secrets
     from datetime import datetime, timezone
 
-    job_name = name or f"zava-sft-14b-e{int(epochs)}-{secrets.token_hex(2)}"
+    job_name = name or f"sft-lora-{secrets.token_hex(2)}"
     version = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")[:-3]
     asset_base = f"{job_name}-out"
 
     cj_props = {
-        "description": f"Zava SFT-LoRA on Qwen3-14B ({epochs} epoch{'s' if epochs != 1 else ''})",
+        "description": f"LoRA SFT on {base_model} ({epochs} epoch{'s' if epochs != 1 else ''})",
         "tags": {
-            "scenario": "zava-sft-lora",
-            "domain": "zava",
-            "agent": SFT_DEFAULTS.base_model,
+            "scenario": "sft-lora",
+            "agent": base_model,
             "epochs": str(epochs),
         },
-        "displayName": job_name,
+        "displayName": display_name,
         "computeId": _compute_id_from_cluster(cluster_name),
         "experimentName": "Default",
         "jobType": "Command",
         "resources": {
             "instanceCount": instance_count,
-            "instanceType": SFT_DEFAULTS.instance_type,
+            "instanceType": instance_type,
             "properties": {
                 "AISuperComputer": {
                     "interactive": False, "slaTier": "Premium", "imageVersion": "",
@@ -531,12 +706,19 @@ def submit_sft_lora(
             },
             "shmSize": "2g",
         },
-        "command": _sft_command(epochs),
-        "environmentImageReference": SFT_DEFAULTS.image,
+        "command": _sft_command(
+            train_filename=train_filename, base_model=base_model, epochs=epochs,
+            batch_size=batch_size, grad_accum=grad_accum, lr=lr,
+            max_seq_len=max_seq_len, lora_r=lora_r, lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout, target_modules=target_modules,
+            val_frac=val_frac, logging_steps=logging_steps,
+            save_strategy=save_strategy, extra_pip=extra_pip,
+        ),
+        "environmentImageReference": image,
         "inputs": {
-            "train_dataset": {"uri": SFT_DEFAULTS.train_uri,
+            "train_dataset": {"uri": train_uri,
                               "mode": "ReadOnlyMount", "jobInputType": "uri_folder"},
-            "code_dataset":  {"uri": SFT_DEFAULTS.code_uri,
+            "code_dataset":  {"uri": code_uri,
                               "mode": "ReadOnlyMount", "jobInputType": "uri_folder"},
         },
         "outputs": {
@@ -547,18 +729,7 @@ def submit_sft_lora(
                             "assetVersion": version,
                             "mode": "ReadWriteMount", "jobOutputType": "uri_folder"},
         },
-        "distribution": {
-            "distributionType": "Ray", "port": 6379, "includeDashboard": True,
-            "headNodeAdditionalArgs": "", "workerNodeAdditionalArgs": "",
-        },
         "environmentVariables": {
-            "AZUREML_CR_BOOTSTRAPPER_CONFIG_OVERRIDE": (
-                '{"capabilities_registry": {"registry": {"url": '
-                '"fdpcommandbtestcanary.azurecr.io", "username": null, '
-                '"password": null}, "repo_prefix": '
-                '"cr2026051502_singularity_bootstrapper", '
-                '"regional_tag_prefix": false}}'
-            ),
             "SINGULARITY_SIDECAR_CONSOLIDATION": "false",
             "HF_HOME": "./hf_cache",
             "HF_HUB_CACHE": "./hf_cache/hub",
@@ -577,7 +748,7 @@ def submit_sft_lora(
     body = {"properties": cj_props}
     import helpers as fh  # type: ignore[import-not-found]
     print(f"Submitting SFT-LoRA job {job_name} on {cluster_name} "
-          f"({instance_count}x {SFT_DEFAULTS.instance_type}, epochs={epochs})")
+          f"({instance_count}x {instance_type}, epochs={epochs})")
     try:
         created = fh.submit_job_via_sdk(
             body, project_endpoint=ENV.project_endpoint, job_name=job_name,
@@ -600,23 +771,168 @@ def submit_sft_lora(
     return job_name
 
 
+def submit_sft_lora_from_local(
+    *,
+    train_path: str | Path,
+    val_path: str | Path | None = None,
+    dataset_name: str,
+    code_dir: str | Path,
+    code_dataset_name: str,
+    cluster_name: str,
+    instance_type: str,
+    image: str,
+    base_model: str,
+    epochs: float = 1.0,
+    **submit_kwargs,
+) -> str:
+    """Upload local SFT data + code folders to Foundry datasets, then submit
+    an SFT-LoRA job.
+
+    Convenience wrapper around :func:`submit_sft_lora` that takes notebook-
+    friendly local paths (relative to the notebook directory, or absolute)
+    for both the train/val JSONL files and the training-code folder
+    (containing ``sft_retail.py``). Both are uploaded as fresh
+    timestamped versions of their respective Foundry datasets via
+    ``helpers.upload_dataset``; the returned URIs are forwarded as
+    ``train_uri`` / ``code_uri`` to :func:`submit_sft_lora`.
+
+    Parameters
+    ----------
+    train_path : str | Path
+        Local path to the training JSONL file (file, not folder). Relative
+        paths resolve against the notebook directory (``ENV.nb_dir``).
+    val_path : str | Path, optional
+        Local path to a validation JSONL file. Uploaded alongside the
+        training file so it is available to the training container; only
+        actually consumed if ``sft_retail.py`` references it.
+    dataset_name : str
+        Foundry dataset asset name for the data folder. A new timestamp-
+        based version is created on every call.
+    code_dir : str | Path
+        Local folder containing ``sft_retail.py`` (and any helper modules it
+        imports). Uploaded as ``code_dataset_name``.
+    code_dataset_name : str
+        Foundry dataset asset name for the code folder.
+    cluster_name, instance_type, image, base_model, epochs :
+        Forwarded to :func:`submit_sft_lora`.
+    **submit_kwargs :
+        Any other keyword arguments accepted by :func:`submit_sft_lora`
+        (e.g. ``lora_r``, ``lr``, ``val_frac``).
+
+    Returns
+    -------
+    str
+        The submitted job name (same as :func:`submit_sft_lora`).
+    """
+    import shutil
+    import tempfile
+    from datetime import datetime, timezone
+
+    if not getattr(ENV, "project_endpoint", None):
+        raise RuntimeError("Call setup_env() before submit_sft_lora_from_local().")
+
+    nb_dir = Path(getattr(ENV, "nb_dir", Path.cwd())).resolve()
+
+    def _resolve_file(p: str | Path, label: str) -> Path:
+        rp = Path(p)
+        if not rp.is_absolute():
+            rp = (nb_dir / rp).resolve()
+        if not rp.exists() or not rp.is_file():
+            raise FileNotFoundError(f"{label} does not exist or is not a file: {rp}")
+        if rp.suffix.lower() != ".jsonl":
+            print(f"warning: {label} is not a .jsonl file: {rp.name}")
+        return rp
+
+    def _resolve_dir(p: str | Path, label: str) -> Path:
+        rp = Path(p)
+        if not rp.is_absolute():
+            rp = (nb_dir / rp).resolve()
+        if not rp.exists() or not rp.is_dir():
+            raise FileNotFoundError(f"{label} does not exist or is not a directory: {rp}")
+        return rp
+
+    train_file = _resolve_file(train_path, "train_path")
+    val_file = _resolve_file(val_path, "val_path") if val_path else None
+    code_folder = _resolve_dir(code_dir, "code_dir")
+    if not (code_folder / "sft_retail.py").exists():
+        print(f"warning: sft_retail.py not found at top of {code_folder}")
+
+    if str(ENV.recipe_dir) not in sys.path:
+        sys.path.insert(0, str(ENV.recipe_dir))
+    import helpers as fh  # type: ignore[import-not-found]
+    upload_extras = {}
+    if getattr(ENV, "storage_connection_name", None):
+        upload_extras["connection_name"] = ENV.storage_connection_name
+
+    # Stage data files into a fresh folder so the upload only contains the
+    # requested files (avoids pulling in unrelated siblings).
+    with tempfile.TemporaryDirectory(prefix="sft-upload-") as staging:
+        staging_dir = Path(staging)
+        shutil.copy2(train_file, staging_dir / train_file.name)
+        if val_file is not None:
+            shutil.copy2(val_file, staging_dir / val_file.name)
+
+        version = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        print(f"Uploading {len(list(staging_dir.iterdir()))} data file(s) to "
+              f"Foundry dataset {dataset_name}:{version} ...")
+        train_uri = fh.upload_dataset(
+            staging_dir,
+            dataset_name=dataset_name,
+            dataset_version=version,
+            project_endpoint=ENV.project_endpoint,
+            **upload_extras,
+        )
+    print(f"train_uri = {train_uri}")
+
+    code_version = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    print(f"Uploading code folder {code_folder} to Foundry dataset "
+          f"{code_dataset_name}:{code_version} ...")
+    code_uri = fh.upload_dataset(
+        code_folder,
+        dataset_name=code_dataset_name,
+        dataset_version=code_version,
+        project_endpoint=ENV.project_endpoint,
+        **upload_extras,
+    )
+    print(f"code_uri  = {code_uri}")
+
+    return submit_sft_lora(
+        cluster_name=cluster_name,
+        instance_type=instance_type,
+        image=image,
+        code_uri=code_uri,
+        train_uri=train_uri,
+        train_filename=train_file.name,
+        base_model=base_model,
+        epochs=epochs,
+        **submit_kwargs,
+    )
+
+
 def wait_for_sft_lora(
     job_id: str | None = None,
-    poll_interval_sec: int = 60,
-    max_wait_min: int = 240,
+    poll_interval_sec: int = 60,  # retained for back-compat; unused (no polling)
+    max_wait_min: int = 240,      # retained for back-compat; unused (no polling)
 ) -> str:
-    """Poll the SFT job until it reaches a terminal state and return the
-    output adapter URI suitable for ``submit_job(sft_lora_uri=...)``.
+    """Resolve the SFT job's LoRA adapter URI *immediately* without polling.
+
+    The job's output ``checkpoints`` asset name/version is fixed at submit
+    time (see ``submit_sft_lora_from_local``), so we can construct the
+    ``azureai://`` URI as soon as the job is registered -- no need to wait
+    for the SFT run to finish. The returned URI can be passed straight
+    into ``submit_job(sft_lora_uri=...)`` so the next (RFT) job is queued
+    immediately. Foundry will mount the adapter at RFT-job start time;
+    if the SFT job hasn't finished writing it by then, the RFT job will
+    wait at mount time or fail with a clear "asset not found" error.
 
     Parameters
     ----------
     job_id : str, optional
         SFT job name. Defaults to the one stored by the most recent
-        ``submit_sft_lora()`` call (``ENV.sft_job_id``).
-    poll_interval_sec : int, default 60
-        Seconds between status polls.
-    max_wait_min : int, default 240
-        Hard ceiling (in minutes) before raising TimeoutError.
+        ``submit_sft_lora_from_local()`` call (``ENV.sft_job_id``).
+    poll_interval_sec, max_wait_min
+        Accepted for backward compatibility; ignored (this function no
+        longer polls). Will be removed in a future cleanup.
 
     Returns
     -------
@@ -624,7 +940,6 @@ def wait_for_sft_lora(
         ``azureai://accounts/<account>/projects/<project>/data/<name>/versions/<version>``
         pointing at the SFT job's ``checkpoints`` output asset.
     """
-    import time
     import requests
     from azure.identity import DefaultAzureCredential
 
@@ -642,49 +957,21 @@ def wait_for_sft_lora(
 
     url = (f"{project_endpoint}/jobs/{job_id}"
            "?api-version=2026-01-15-preview")
-    headers = {"Authorization": f"Bearer {token}"}
-
-    terminal = {"Completed", "Failed", "Canceled", "Cancelled"}
-    deadline = time.time() + max_wait_min * 60
-    last_status = None
-    print(f"Polling SFT job {job_id} every {poll_interval_sec}s "
-          f"(timeout {max_wait_min}m)...")
-    while True:
-        # Refresh token periodically (cheap; AAD token lasts ~1h).
-        if time.time() % 1800 < poll_interval_sec:
-            with DefaultAzureCredential() as cred:
-                token = cred.get_token("https://ai.azure.com/.default").token
-                headers["Authorization"] = f"Bearer {token}"
-        r = requests.get(url, headers=headers, timeout=30)
-        r.raise_for_status()
-        d = r.json()
-        p = d.get("properties", {})
-        status = p.get("status")
-        if status != last_status:
-            print(f"  status: {status}")
-            last_status = status
-        if status in terminal:
-            if status != "Completed":
-                raise RuntimeError(
-                    f"SFT job {job_id} ended with status={status}. "
-                    "Check the Foundry portal for the failure cause."
-                )
-            ckpt = (p.get("outputs") or {}).get("checkpoints") or {}
-            asset_name = ckpt.get("assetName")
-            asset_version = ckpt.get("assetVersion")
-            if not asset_name or not asset_version:
-                raise RuntimeError(
-                    f"SFT job {job_id} completed but checkpoints output has "
-                    f"no assetName/assetVersion: {ckpt!r}"
-                )
-            uri = (f"azureai://accounts/{account}/projects/{project}"
-                   f"/data/{asset_name}/versions/{asset_version}")
-            ENV.sft_lora_uri = uri
-            print(f"\nSFT LoRA adapter URI:\n  {uri}")
-            return uri
-        if time.time() > deadline:
-            raise TimeoutError(
-                f"SFT job {job_id} did not finish within {max_wait_min} minutes "
-                f"(last status={status})."
-            )
-        time.sleep(poll_interval_sec)
+    r = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=30)
+    r.raise_for_status()
+    p = r.json().get("properties", {})
+    status = p.get("status")
+    ckpt = (p.get("outputs") or {}).get("checkpoints") or {}
+    asset_name = ckpt.get("assetName")
+    asset_version = ckpt.get("assetVersion")
+    if not asset_name or not asset_version:
+        raise RuntimeError(
+            f"SFT job {job_id} has no checkpoints assetName/assetVersion in its "
+            f"spec (status={status}): {ckpt!r}. Cannot construct adapter URI."
+        )
+    uri = (f"azureai://accounts/{account}/projects/{project}"
+           f"/data/{asset_name}/versions/{asset_version}")
+    ENV.sft_lora_uri = uri
+    print(f"SFT job {job_id} status: {status} (not waiting -- proceeding to next job)")
+    print(f"SFT LoRa adapter URI (resolved from job spec):\n  {uri}")
+    return uri

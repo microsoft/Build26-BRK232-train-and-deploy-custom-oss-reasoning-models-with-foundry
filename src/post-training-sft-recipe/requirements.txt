@@ -1,4 +1,4 @@
-# Python packages required to run zava_sft_submit.ipynb locally.
+# Python packages required to run retail_sft_submit.ipynb locally.
 #
 # Install with:
 #   pip install --pre -r requirements.txt --extra-index-url \

@@ -182,9 +182,19 @@ def _conversation_trace(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _sample_tool_schemas(sample: Any) -> Any:
     metadata = getattr(sample, "metadata", None)
-    if not isinstance(metadata, dict) or "tools" not in metadata:
-        raise ValueError("sample.metadata['tools'] is required to render tool-calling prompts")
-    return metadata["tools"]
+    if isinstance(metadata, dict) and "tools" in metadata:
+        return metadata["tools"]
+    # Fall back to the canonical retail tool list. The Retail training
+    # corpus is single-domain — every sample uses the same tools — so we
+    # don't require per-sample `metadata.tools` (older datasets omitted it).
+    try:
+        from retail_tools import TOOL_SCHEMAS as _DEFAULT_TOOLS  # type: ignore[import-not-found]
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(
+            "sample.metadata['tools'] is missing and retail_tools.TOOL_SCHEMAS "
+            f"could not be imported as fallback: {exc!r}"
+        ) from exc
+    return _DEFAULT_TOOLS
 
 
 def _openai_tool_schemas(tool_schemas: Any) -> list[dict[str, Any]]:

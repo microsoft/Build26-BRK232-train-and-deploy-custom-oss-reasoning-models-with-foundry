@@ -1,4 +1,4 @@
-# Zava SFT / async-GRPO submission
+# Retail SFT / async-GRPO submission
 
 `submit_sft.py` reproduces the Foundry job that was originally submitted ad-hoc
 in chat (`zv-rft-32b-sft-h-mf2y` on H100, `zv-rft-32b-sft-a-3nwl` on A100).
@@ -20,22 +20,22 @@ python submit_sft.py --cluster h100 --name zv-rft-32b-sft-h-fix1
 ## What it submits
 
 - **Image**: `mcr.microsoft.com/azureml/curated/slime-pytorch-2.9-cuda12.8:3`
-- **Entrypoint**: `${{inputs.code_dataset}}/zava_slime_train.py`
+- **Entrypoint**: `${{inputs.code_dataset}}/retail_slime_train.py`
   (async GRPO via SLIME on Ray)
 - **Distribution**: Ray, head + worker, dashboard on 8265
 - **GPU layout**: `--num_gpus 8 --num_nodes 4 --tensor_parallel 8
   --rollout_num_gpus 16` (so 2 rollout nodes + 2 actor nodes)
 - **Inputs**:
-  - `train_dataset` → `zava-train-data`
-  - `code_dataset`  → `zava-code`
+  - `train_dataset` → `retail-train-data`
+  - `code_dataset`  → `retail-code`
   - `sft_lora_dataset` → checkpoint to seed RFT from
 - **Outputs**: `model_output`, `checkpoints`, `rollouts`, `ray_temp`, `hf_cache`
-- **Env**: `SLIME_HF_MODEL_ID=Qwen/Qwen3-32B`, `TAUBENCH_DOMAIN=zava`, etc.
+- **Env**: `SLIME_HF_MODEL_ID=Qwen/Qwen3-32B`, `TAUBENCH_DOMAIN=retail`, etc.
 - **Identity**: `fdp-training-pilot-umi` (UMI)
 
 ## When to bump
 
-- Re-upload `zava-train-data` / `zava-code` → bump version strings in
+- Re-upload `retail-train-data` / `retail-code` → bump version strings in
   `DATASETS` at the top of the script.
 - New SFT checkpoint to seed RFT from → update `sft_lora_dataset` URI.
 - New container → update `ENV_IMAGE`.

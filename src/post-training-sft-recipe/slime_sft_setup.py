@@ -1,4 +1,4 @@
-"""Helper module for the Zava SFT demo notebook.
+"""Helper module for the Retail SFT demo notebook.
 
 Hides path setup, submission, and rollout-tail plumbing so the notebook cells
 stay one-liners.
