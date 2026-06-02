@@ -139,7 +139,7 @@ def setup_env(
             print(f"Storage   : {e.storage_connection_name}")
         if e.managed_identity_uai:
             print(f"UAI       : {e.managed_identity_uai}")
-    return e
+    return "Setup is Complete."
 
 
 # ──────────────────── 2. Echo key submit parameters ───────────────────────────────────────────

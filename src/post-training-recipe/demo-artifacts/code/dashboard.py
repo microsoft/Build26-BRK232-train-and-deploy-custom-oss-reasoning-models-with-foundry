@@ -641,13 +641,584 @@ hr {
 </style>
 """
 
+DEFAULT_DASHBOARD_THEME = "Midnight Cyberpunk"
+DASHBOARD_THEME_STATE_KEY = "dashboard_theme_v2"
+
+REFERENCE_FONT_BODY = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+
+
+def reference_dashboard_theme(
+    *,
+    bg: str,
+    surface: str,
+    surface_2: str,
+    surface_3: str,
+    border: str,
+    text: str,
+    muted: str,
+    accent: str,
+    accent_2: str,
+    accent_3: str,
+    success: str,
+    danger: str,
+    warning: str,
+    gold: str,
+    blue_badge: str,
+    shadow: str,
+    body_bg: str,
+    header_bg: str,
+    header_border: str,
+    card_bg: str,
+    title_grad: str,
+    title_shadow: str = "none",
+    radius: str = "18px",
+    font_body: str = REFERENCE_FONT_BODY,
+    title_font: str = "inherit",
+    on_brand: str = "#ffffff",
+) -> dict[str, str]:
+    return {
+        "--foundry-bg": bg,
+        "--foundry-surface": surface,
+        "--foundry-surface-subtle": surface_2,
+        "--foundry-surface-muted": surface_3,
+        "--foundry-surface-2": surface_2,
+        "--foundry-surface-3": surface_3,
+        "--foundry-stroke": border,
+        "--foundry-stroke-strong": header_border,
+        "--foundry-text": text,
+        "--foundry-text-muted": muted,
+        "--foundry-text-subtle": muted,
+        "--foundry-brand": accent,
+        "--foundry-brand-hover": accent,
+        "--foundry-brand-pressed": accent,
+        "--foundry-teal": accent_3,
+        "--foundry-purple": accent_2,
+        "--foundry-success": success,
+        "--foundry-warning": warning,
+        "--foundry-danger": danger,
+        "--foundry-gold": gold,
+        "--foundry-blue-badge": blue_badge,
+        "--foundry-shadow": shadow,
+        "--foundry-app-background": body_bg,
+        "--foundry-sidebar-background": card_bg,
+        "--foundry-brand-bar": f"linear-gradient(90deg, {accent} 0%, {accent_2} 58%, {accent_3} 100%)",
+        "--foundry-surface-glass": card_bg,
+        "--foundry-surface-subtle-glass": surface_2,
+        "--foundry-chip-bg": surface_2,
+        "--foundry-input-bg": surface_3,
+        "--foundry-card-bg": card_bg,
+        "--foundry-table-header-bg": surface_2,
+        "--foundry-title-gradient": title_grad,
+        "--foundry-title-shadow": title_shadow,
+        "--foundry-font-body": font_body,
+        "--foundry-title-font": title_font,
+        "--foundry-radius": radius,
+        "--foundry-on-brand": on_brand,
+        "--foundry-mark": accent,
+    }
+
+
+DASHBOARD_THEMES = {
+    "Default": reference_dashboard_theme(
+        bg="#0f1117",
+        surface="#161b22",
+        surface_2="#1c2128",
+        surface_3="#21262d",
+        border="#30363d",
+        text="#e6edf3",
+        muted="#8b949e",
+        accent="#58a6ff",
+        accent_2="#a371f7",
+        accent_3="#2ea043",
+        success="#3fb950",
+        danger="#f85149",
+        warning="#d29922",
+        gold="#f2cc60",
+        blue_badge="#6cb6ff",
+        shadow="0 18px 50px rgba(0, 0, 0, 0.34)",
+        body_bg="radial-gradient(circle at top right, rgba(88, 166, 255, 0.14), transparent 24%), radial-gradient(circle at top left, rgba(163, 113, 247, 0.12), transparent 20%), #0f1117",
+        header_bg="rgba(15, 17, 23, 0.92)",
+        header_border="rgba(48, 54, 61, 0.9)",
+        card_bg="linear-gradient(180deg, rgba(22, 27, 34, 0.98), rgba(22, 27, 34, 0.92))",
+        title_grad="linear-gradient(135deg, #d2e9ff 0%, #58a6ff 45%, #a371f7 100%)",
+        on_brand="#0f1117",
+    ),
+    "Midnight Cyberpunk": reference_dashboard_theme(
+        bg="#02030b",
+        surface="#080a1a",
+        surface_2="#0d1028",
+        surface_3="#151a3d",
+        border="#244a6e",
+        text="#f3f8ff",
+        muted="#91a4c4",
+        accent="#00eaff",
+        accent_2="#ff2bd6",
+        accent_3="#7cff6b",
+        success="#00ff95",
+        danger="#ff3864",
+        warning="#ffb000",
+        gold="#ff2bd6",
+        blue_badge="#00eaff",
+        shadow="0 0 22px rgba(0, 234, 255, 0.12), 0 18px 62px rgba(0, 0, 0, 0.74)",
+        body_bg="repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.024) 0, rgba(255, 255, 255, 0.024) 1px, transparent 1px, transparent 4px), radial-gradient(circle at top right, rgba(0, 234, 255, 0.2), transparent 28%), radial-gradient(circle at top left, rgba(255, 43, 214, 0.18), transparent 22%), linear-gradient(180deg, #02030b 0%, #05072a 46%, #02030b 100%)",
+        header_bg="rgba(2, 3, 11, 0.9)",
+        header_border="rgba(0, 234, 255, 0.34)",
+        card_bg="linear-gradient(180deg, rgba(8, 10, 26, 0.97), rgba(14, 10, 38, 0.92))",
+        title_grad="linear-gradient(135deg, #f7fbff 0%, #00eaff 42%, #ff2bd6 100%)",
+        title_shadow="0 0 24px rgba(0, 234, 255, 0.28), 0 0 32px rgba(255, 43, 214, 0.18)",
+        title_font='"Cascadia Code", "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+        on_brand="#02030b",
+    ),
+    "Arctic Minimal": reference_dashboard_theme(
+        bg="#f8fafc",
+        surface="#ffffff",
+        surface_2="#f1f5f9",
+        surface_3="#eef4fb",
+        border="#e2e8f0",
+        text="#0f172a",
+        muted="#475569",
+        accent="#2563eb",
+        accent_2="#0369a1",
+        accent_3="#0f766e",
+        success="#0f766e",
+        danger="#b91c1c",
+        warning="#b45309",
+        gold="#0f766e",
+        blue_badge="#2563eb",
+        shadow="0 18px 44px rgba(15, 23, 42, 0.08)",
+        body_bg="radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 26%), radial-gradient(circle at top left, rgba(14, 165, 233, 0.06), transparent 22%), #f8fafc",
+        header_bg="rgba(255, 255, 255, 0.86)",
+        header_border="rgba(226, 232, 240, 0.95)",
+        card_bg="linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96))",
+        title_grad="linear-gradient(135deg, #0f172a 0%, #2563eb 55%, #0891b2 100%)",
+    ),
+    "Solarized Dark": reference_dashboard_theme(
+        bg="#002b36",
+        surface="#073642",
+        surface_2="#073642",
+        surface_3="#073642",
+        border="#839496",
+        text="#93a1a1",
+        muted="#a8b9b9",
+        accent="#6bb6e8",
+        accent_2="#b8bbff",
+        accent_3="#a6bf00",
+        success="#a6bf00",
+        danger="#ff6b64",
+        warning="#d8a71d",
+        gold="#d8a71d",
+        blue_badge="#6bb6e8",
+        shadow="0 18px 50px rgba(0, 43, 54, 0.34)",
+        body_bg="radial-gradient(circle at top right, rgba(38, 139, 210, 0.14), transparent 24%), radial-gradient(circle at top left, rgba(108, 113, 196, 0.12), transparent 20%), #002b36",
+        header_bg="rgba(0, 43, 54, 0.92)",
+        header_border="rgba(131, 148, 150, 0.9)",
+        card_bg="linear-gradient(180deg, rgba(7, 54, 66, 0.98), rgba(7, 54, 66, 0.92))",
+        title_grad="linear-gradient(135deg, #a8b9b9 0%, #6bb6e8 45%, #b8bbff 100%)",
+        on_brand="#002b36",
+    ),
+    "Material Light": reference_dashboard_theme(
+        bg="#fef7ff",
+        surface="#fffbfe",
+        surface_2="#f3edf7",
+        surface_3="#f3edf7",
+        border="#cac4d0",
+        text="#1d1b20",
+        muted="#49454f",
+        accent="#6750a4",
+        accent_2="#625b71",
+        accent_3="#7d5260",
+        success="#386a20",
+        danger="#b3261e",
+        warning="#7d5800",
+        gold="#7d5260",
+        blue_badge="#6750a4",
+        shadow="0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08)",
+        body_bg="radial-gradient(circle at top right, rgba(234, 221, 255, 0.72), transparent 26%), radial-gradient(circle at top left, rgba(243, 237, 247, 0.92), transparent 24%), #fef7ff",
+        header_bg="rgba(254, 247, 255, 0.92)",
+        header_border="rgba(202, 196, 208, 0.8)",
+        card_bg="linear-gradient(180deg, #fffbfe, #fef7ff)",
+        title_grad="linear-gradient(135deg, #6750a4 0%, #625b71 48%, #7d5260 100%)",
+        radius="16px",
+        font_body='Roboto, "Google Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    ),
+    "Catppuccin Mocha": reference_dashboard_theme(
+        bg="#1e1e2e",
+        surface="#181825",
+        surface_2="#313244",
+        surface_3="#45475a",
+        border="#585b70",
+        text="#cdd6f4",
+        muted="#bac2de",
+        accent="#a6c8ff",
+        accent_2="#dec3ff",
+        accent_3="#a6e3a1",
+        success="#a6e3a1",
+        danger="#ffb6c8",
+        warning="#fab387",
+        gold="#f9e2af",
+        blue_badge="#9bdfff",
+        shadow="0 18px 50px rgba(17, 17, 27, 0.45)",
+        body_bg="radial-gradient(circle at top right, rgba(137, 180, 250, 0.16), transparent 24%), radial-gradient(circle at top left, rgba(203, 166, 247, 0.14), transparent 20%), #1e1e2e",
+        header_bg="rgba(30, 30, 46, 0.92)",
+        header_border="rgba(88, 91, 112, 0.78)",
+        card_bg="linear-gradient(180deg, rgba(24, 24, 37, 0.98), rgba(30, 30, 46, 0.92))",
+        title_grad="linear-gradient(135deg, #f5e0dc 0%, #a6c8ff 45%, #dec3ff 100%)",
+        on_brand="#1e1e2e",
+    ),
+    "Nord Dark": reference_dashboard_theme(
+        bg="#2e3440",
+        surface="#3b4252",
+        surface_2="#434c5e",
+        surface_3="#4c566a",
+        border="#4c566a",
+        text="#eceff4",
+        muted="#d8dee9",
+        accent="#a6d7e4",
+        accent_2="#f0c7e6",
+        accent_3="#c7edb0",
+        success="#c7edb0",
+        danger="#ffc3c7",
+        warning="#ebcb8b",
+        gold="#ebcb8b",
+        blue_badge="#a6d7e4",
+        shadow="0 18px 50px rgba(46, 52, 64, 0.55)",
+        body_bg="radial-gradient(circle at top right, rgba(136, 192, 208, 0.14), transparent 24%), radial-gradient(circle at top left, rgba(180, 142, 173, 0.12), transparent 20%), #2e3440",
+        header_bg="rgba(46, 52, 64, 0.92)",
+        header_border="rgba(76, 86, 106, 0.9)",
+        card_bg="linear-gradient(180deg, rgba(59, 66, 82, 0.98), rgba(59, 66, 82, 0.92))",
+        title_grad="linear-gradient(135deg, #eceff4 0%, #a6d7e4 45%, #f0c7e6 100%)",
+        on_brand="#2e3440",
+    ),
+    "Retro CRT": reference_dashboard_theme(
+        bg="#000000",
+        surface="#020802",
+        surface_2="#031303",
+        surface_3="#061a06",
+        border="#33ff33",
+        text="#33ff33",
+        muted="#1fd91f",
+        accent="#33ff33",
+        accent_2="#ffb000",
+        accent_3="#24cc24",
+        success="#33ff33",
+        danger="#ffb000",
+        warning="#ffb000",
+        gold="#ffb000",
+        blue_badge="#33ff33",
+        shadow="0 0 24px rgba(51, 255, 51, 0.16)",
+        body_bg="#000000",
+        header_bg="rgba(0, 0, 0, 0.94)",
+        header_border="rgba(51, 255, 51, 0.75)",
+        card_bg="linear-gradient(180deg, rgba(0, 16, 0, 0.96), rgba(0, 0, 0, 0.94))",
+        title_grad="linear-gradient(135deg, #33ff33 0%, #33ff33 60%, #ffb000 100%)",
+        title_shadow="0 0 6px #33ff33",
+        font_body='Consolas, "Courier New", monospace',
+        title_font='Consolas, "Courier New", monospace',
+        on_brand="#000000",
+    ),
+}
+
+
+def selected_dashboard_theme() -> str:
+    theme = st.session_state.get(DASHBOARD_THEME_STATE_KEY, DEFAULT_DASHBOARD_THEME)
+    return theme if theme in DASHBOARD_THEMES else DEFAULT_DASHBOARD_THEME
+
+
+def dashboard_theme_token(name: str) -> str:
+    return DASHBOARD_THEMES[selected_dashboard_theme()][name]
+
+
+def build_dashboard_theme_css(theme: str) -> str:
+    variables = "\n".join(
+        f"    {name}: {value};" for name, value in DASHBOARD_THEMES[theme].items()
+    )
+    return f"""
+<style>
+:root {{
+{variables}
+}}
+
+.stApp {{
+    background: var(--foundry-app-background);
+    color: var(--foundry-text);
+    font-family: var(--foundry-font-body);
+}}
+
+.stApp h1,
+.stApp h2,
+.stApp h3,
+.stApp [data-testid="stMarkdownContainer"] h1,
+.stApp [data-testid="stMarkdownContainer"] h2,
+.stApp [data-testid="stMarkdownContainer"] h3 {{
+    color: var(--foundry-text);
+    font-family: var(--foundry-title-font);
+}}
+
+[data-testid="stSidebar"] {{
+    background: var(--foundry-sidebar-background);
+    border-right-color: var(--foundry-stroke);
+}}
+
+.foundry-sidebar-brand,
+.foundry-rollout-summary,
+.foundry-app-header {{
+    background: var(--foundry-card-bg);
+    border-color: var(--foundry-stroke);
+    border-radius: var(--foundry-radius);
+    box-shadow: var(--foundry-shadow);
+}}
+
+.foundry-app-header h1 {{
+    background: var(--foundry-title-gradient);
+    background-clip: text;
+    color: transparent;
+    font-family: var(--foundry-title-font);
+    text-shadow: var(--foundry-title-shadow);
+    -webkit-background-clip: text;
+}}
+
+.foundry-source-card,
+[data-testid="stSidebar"] [role="radiogroup"],
+[data-testid="stSidebar"] [data-testid="stExpander"] details,
+[data-testid="stExpander"] {{
+    background: var(--foundry-surface-subtle-glass);
+    border-color: var(--foundry-stroke);
+}}
+
+.foundry-refresh-chip,
+.foundry-file-stats span,
+.foundry-meta-pill {{
+    background: var(--foundry-chip-bg);
+    border-color: var(--foundry-stroke);
+    color: var(--foundry-text-muted);
+}}
+
+.foundry-sidebar-brand::before,
+.foundry-app-header::before {{
+    background: var(--foundry-brand-bar);
+}}
+
+.foundry-product-mark {{
+    color: var(--foundry-mark);
+}}
+
+[data-testid="stSidebar"] [data-baseweb="select"] > div,
+[data-testid="stSidebar"] input,
+[data-testid="stSidebar"] textarea {{
+    background: var(--foundry-input-bg) !important;
+    border-color: var(--foundry-stroke) !important;
+    color: var(--foundry-text) !important;
+}}
+
+.stApp [data-testid="stMarkdownContainer"] p,
+.stApp [data-testid="stWidgetLabel"] p,
+.stApp label,
+.stApp label span,
+.stApp [role="radiogroup"] label,
+.stApp [role="radiogroup"] label p,
+.stApp [role="radiogroup"] label span,
+.stApp [data-baseweb="radio"] p,
+.stApp [data-baseweb="radio"] span {{
+    color: var(--foundry-text) !important;
+    opacity: 1 !important;
+}}
+
+.stApp input[type="radio"] {{
+    accent-color: var(--foundry-brand);
+}}
+
+.stApp [data-testid="stCaptionContainer"] p,
+.stApp small,
+.stApp [data-testid="stFileUploaderDropzoneInstructions"] small,
+.stApp [data-testid="stFileUploaderDropzoneInstructions"] span {{
+    color: var(--foundry-text-muted) !important;
+    opacity: 1 !important;
+}}
+
+[data-testid="stExpander"] details summary,
+[data-testid="stExpander"] details summary p,
+[data-testid="stExpander"] details summary span {{
+    background: var(--foundry-surface-2);
+    color: var(--foundry-text) !important;
+    opacity: 1 !important;
+}}
+
+[data-testid="stFileUploaderDropzone"] {{
+    background: var(--foundry-surface-2) !important;
+    border-color: var(--foundry-stroke-strong) !important;
+    color: var(--foundry-text) !important;
+}}
+
+[data-testid="stFileUploaderDropzone"] div,
+[data-testid="stFileUploaderDropzone"] p,
+[data-testid="stFileUploaderDropzone"] span,
+[data-testid="stFileUploaderDropzone"] svg {{
+    color: var(--foundry-text-muted) !important;
+    fill: var(--foundry-text-muted) !important;
+    opacity: 1 !important;
+}}
+
+[data-testid="stFileUploaderDropzone"] button {{
+    background: var(--foundry-brand) !important;
+    border-color: var(--foundry-brand) !important;
+    color: var(--foundry-on-brand) !important;
+}}
+
+[data-testid="stMetric"],
+[data-testid="stDataFrame"],
+[data-testid="stTable"] {{
+    background: var(--foundry-card-bg);
+    border-color: var(--foundry-stroke);
+    box-shadow: var(--foundry-shadow);
+}}
+
+[data-testid="stMetricLabel"],
+.foundry-tool-table th {{
+    color: var(--foundry-text-muted);
+}}
+
+[data-testid="stMetricValue"],
+.foundry-tool-table td,
+.foundry-tool-name,
+.foundry-tool-args {{
+    color: var(--foundry-text);
+}}
+
+.stButton > button,
+.stDownloadButton > button,
+[data-testid="stBaseButton-secondary"] {{
+    background: var(--foundry-chip-bg);
+    border-color: var(--foundry-stroke-strong);
+    color: var(--foundry-text);
+}}
+
+.stButton > button:hover,
+.stDownloadButton > button:hover,
+[data-testid="stBaseButton-secondary"]:hover {{
+    background: var(--foundry-surface-3);
+    border-color: var(--foundry-brand);
+    color: var(--foundry-brand);
+}}
+
+[data-testid="stBaseButton-primary"] {{
+    background: var(--foundry-brand);
+    border-color: var(--foundry-brand);
+    color: var(--foundry-on-brand);
+}}
+
+.stTabs [data-baseweb="tab-list"] {{
+    border-bottom-color: var(--foundry-stroke);
+}}
+
+.stTabs [data-baseweb="tab"] {{
+    color: var(--foundry-text-muted);
+}}
+
+.stTabs [aria-selected="true"][data-baseweb="tab"] {{
+    background: var(--foundry-surface);
+    border-color: var(--foundry-stroke);
+    box-shadow: 0 -1px 0 var(--foundry-surface) inset;
+    color: var(--foundry-text);
+}}
+
+.foundry-tool-table-wrap {{
+    background: var(--foundry-card-bg);
+    border-color: var(--foundry-stroke);
+}}
+
+.foundry-tool-table th,
+.foundry-tool-table td {{
+    border-color: var(--foundry-stroke);
+}}
+
+.foundry-tool-table th {{
+    background: var(--foundry-table-header-bg);
+}}
+
+[data-testid="stCodeBlock"],
+[data-testid="stText"],
+[data-testid="stText"] div,
+[data-testid="stText"] span,
+[data-testid="stText"] pre,
+[data-testid="stText"] code,
+pre,
+code {{
+    background: var(--foundry-surface-2) !important;
+    color: var(--foundry-text) !important;
+    opacity: 1 !important;
+}}
+
+[data-testid="stExpander"] [data-testid="stText"],
+[data-testid="stExpander"] [data-testid="stText"] div,
+[data-testid="stExpander"] [data-testid="stText"] span,
+[data-testid="stExpander"] [data-testid="stText"] pre,
+[data-testid="stExpander"] [data-testid="stText"] code {{
+    background: transparent !important;
+    color: var(--foundry-text) !important;
+    opacity: 1 !important;
+}}
+
+.foundry-text-block {{
+    background: transparent;
+    color: var(--foundry-text) !important;
+    font-family: var(--foundry-font-body);
+    font-size: 0.96rem;
+    line-height: 1.62;
+    opacity: 1 !important;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}}
+
+.foundry-text-block * {{
+    color: var(--foundry-text) !important;
+    opacity: 1 !important;
+}}
+
+.foundry-score-line {{
+    color: var(--foundry-text-muted);
+    font-size: 0.94rem;
+    line-height: 1.4;
+}}
+
+.foundry-score-line strong {{
+    font-weight: 700;
+}}
+
+.foundry-score-success strong {{
+    color: var(--foundry-success);
+}}
+
+.foundry-score-warning strong {{
+    color: var(--foundry-warning);
+}}
+
+.foundry-score-danger strong {{
+    color: var(--foundry-danger);
+}}
+
+.foundry-score-muted strong {{
+    color: var(--foundry-text-muted);
+}}
+
+hr {{
+    border-color: var(--foundry-stroke);
+}}
+</style>
+"""
+
 
 def apply_foundry_theme():
     st.markdown(FOUNDRY_THEME_CSS, unsafe_allow_html=True)
+    st.markdown(build_dashboard_theme_css(selected_dashboard_theme()), unsafe_allow_html=True)
 
 
 def _h(value) -> str:
     return html.escape(str(value), quote=True)
+
+
+def render_plain_text(value) -> None:
+    text = "" if value is None else str(value)
+    st.markdown(f'<div class="foundry-text-block">{_h(text)}</div>', unsafe_allow_html=True)
 
 
 FLUENT_ICON_SVGS = {
@@ -1074,6 +1645,16 @@ def render_sidebar_bottom(upload_key: str, uploaded_files, sidebar=None):
         else:
             st.caption("No environment variables match the filter.")
 
+    sidebar.divider()
+    theme_options = list(DASHBOARD_THEMES.keys())
+    sidebar.selectbox(
+        "Theme",
+        theme_options,
+        index=theme_options.index(selected_dashboard_theme()),
+        key=DASHBOARD_THEME_STATE_KEY,
+        help="Choose the dashboard color theme.",
+    )
+
 
 def stop_after_sidebar_bottom(upload_key: str, uploaded_files):
     render_sidebar_bottom(upload_key, uploaded_files)
@@ -1197,15 +1778,54 @@ def dynamic_numeric_domain(values, padding_ratio: float = 0.08, min_padding: flo
     return [min_value - padding, max_value + padding]
 
 
-def reward_color(reward) -> str:
+def reward_status(reward) -> str:
     score = extract_reward_score(reward)
     if score is None:
-        return "gray"
+        return "muted"
     if score >= 1.0:
-        return "green"
+        return "success"
     if score > 0:
-        return "orange"
-    return "red"
+        return "warning"
+    return "danger"
+
+
+def render_score_line(reward, length) -> None:
+    status = reward_status(reward)
+    st.markdown(
+        f'<div class="foundry-score-line foundry-score-{status}">'
+        f'<strong>Score: {format_float(extract_reward_score(reward))}</strong>'
+        f' · <span>{_h(length)}</span> tokens'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def themed_vega_spec(spec: dict) -> dict:
+    themed = dict(spec)
+    config = dict(themed.get("config", {}))
+    config["axis"] = {
+        **dict(config.get("axis", {})),
+        "domainColor": dashboard_theme_token("--foundry-stroke"),
+        "gridColor": dashboard_theme_token("--foundry-stroke"),
+        "labelColor": dashboard_theme_token("--foundry-text-muted"),
+        "titleColor": dashboard_theme_token("--foundry-text"),
+    }
+    config["legend"] = {
+        **dict(config.get("legend", {})),
+        "labelColor": dashboard_theme_token("--foundry-text"),
+        "titleColor": dashboard_theme_token("--foundry-text"),
+    }
+    config["title"] = {
+        **dict(config.get("title", {})),
+        "color": dashboard_theme_token("--foundry-text"),
+    }
+    config["view"] = {
+        **dict(config.get("view", {})),
+        "stroke": dashboard_theme_token("--foundry-stroke"),
+    }
+    themed["background"] = "transparent"
+    themed["config"] = config
+    return themed
 
 
 def extract_reward_prediction(reward) -> str:
@@ -1504,16 +2124,16 @@ def render_trace_content(role: str, content):
     if think_blocks:
         if visible_text:
             st.markdown("**Visible response**")
-            st.text(visible_text)
+            render_plain_text(visible_text)
         with st.expander("Reasoning", expanded=False):
             for block in think_blocks:
-                st.text(block.strip())
+                render_plain_text(block.strip())
         return
 
     if role in {"system", "user"}:
         st.markdown(text)
     else:
-        st.text(text)
+        render_plain_text(text)
 
 
 def render_trace_tool_calls(message: dict):
@@ -1753,8 +2373,8 @@ def render_variation_summary(samples: pd.DataFrame):
                 "height": 180,
                 "mark": {
                     "type": "line",
-                    "color": "#242424",
-                    "point": {"filled": True, "size": 58, "color": "#242424"},
+                    "color": dashboard_theme_token("--foundry-brand"),
+                    "point": {"filled": True, "size": 58, "color": dashboard_theme_token("--foundry-brand")},
                     "strokeWidth": 2.25,
                 },
                 "encoding": {
@@ -1778,7 +2398,7 @@ def render_variation_summary(samples: pd.DataFrame):
                 },
             }
             st.caption("Reward by generation index")
-            st.vega_lite_chart(reward_points, reward_chart, use_container_width=True)
+            st.vega_lite_chart(reward_points, themed_vega_spec(reward_chart), use_container_width=True)
         elif "response_length" in samples:
             st.caption("Response length distribution")
             st.bar_chart(samples[["response_length"]], height=180)
@@ -1854,16 +2474,14 @@ def render_generation_browser(samples: pd.DataFrame, key_prefix: str):
     for start in range(0, len(filtered), columns_per_row):
         cols = st.columns(columns_per_row)
         for card_offset, (col, (_, row)) in enumerate(zip(cols, filtered.iloc[start:start + columns_per_row].iterrows())):
-            score = extract_reward_score(row.get("reward"))
-            color = reward_color(row.get("reward"))
             length = row.get("response_length", "—")
             with col.container(border=True):
-                st.markdown(f":{color}[**Score: {format_float(score)}**] · `{length}` tokens")
+                render_score_line(row.get("reward"), length)
                 if row.get("_answer"):
                     with st.expander("Extracted answer / code", expanded=True):
                         st.code(row["_answer"] if row.get("_code") else str(row["_answer"]))
                 with st.expander("Full generation", expanded=False):
-                    st.text(row.get("response", ""))
+                    render_plain_text(row.get("response", ""))
                 sample_key = re.sub(r"\W+", "_", str(row.get("sample_idx", f"{start}_{card_offset}")))
                 with st.expander("Tool comparison", expanded=False):
                     render_sample_diagnostics(
@@ -2012,14 +2630,12 @@ def render_prompt_group_browser(
             left_card, right_card = st.columns(2)
 
             def _render_compare_card(row: pd.Series, side: str):
-                score = extract_reward_score(row.get("reward"))
-                color = reward_color(row.get("reward"))
                 length = row.get("response_length", "—")
-                st.markdown(f":{color}[**Score: {format_float(score)}**] · `{length}` tokens")
+                render_score_line(row.get("reward"), length)
                 st.markdown(f"**{side} extracted answer**")
                 st.code(row["_answer"] or "(empty)")
                 st.markdown("**Full generation**")
-                st.text(row.get("response", ""))
+                render_plain_text(row.get("response", ""))
 
             with left_card.container(border=True):
                 _render_compare_card(left_row, "Left")
@@ -2136,8 +2752,8 @@ if view == "Train":
                 "height": 220,
                 "mark": {
                     "type": "line",
-                    "color": "#242424",
-                    "point": {"filled": True, "size": 54, "color": "#242424"},
+                    "color": dashboard_theme_token("--foundry-brand"),
+                    "point": {"filled": True, "size": 54, "color": dashboard_theme_token("--foundry-brand")},
                     "strokeWidth": 2.25,
                 },
                 "encoding": {
@@ -2160,7 +2776,7 @@ if view == "Train":
                     ],
                 },
             }
-            st.vega_lite_chart(trend, reward_trend_chart, use_container_width=True)
+            st.vega_lite_chart(trend, themed_vega_spec(reward_trend_chart), use_container_width=True)
         else:
             st.caption("No reward values are available for this trend.")
 
@@ -2292,14 +2908,12 @@ if view == "Train":
             left_card, right_card = st.columns(2)
 
             def _render_compare_card(row: pd.Series, side: str):
-                score = extract_reward_score(row.get("reward"))
-                color = reward_color(row.get("reward"))
                 length = row.get("response_length", "—")
-                st.markdown(f":{color}[**Score: {format_float(score)}**] · `{length}` tokens")
+                render_score_line(row.get("reward"), length)
                 st.markdown(f"**{side} extracted answer**")
                 st.code(row["_answer"] or "(empty)")
                 st.markdown("**Full generation**")
-                st.text(row.get("response", ""))
+                render_plain_text(row.get("response", ""))
 
             with left_card.container(border=True):
                 _render_compare_card(left_row, "Left")
@@ -2381,8 +2995,8 @@ elif view == "Eval":
                 "height": 220,
                 "mark": {
                     "type": "line",
-                    "color": "#242424",
-                    "point": {"filled": True, "size": 54, "color": "#242424"},
+                    "color": dashboard_theme_token("--foundry-brand"),
+                    "point": {"filled": True, "size": 54, "color": dashboard_theme_token("--foundry-brand")},
                     "strokeWidth": 2.25,
                 },
                 "encoding": {
@@ -2405,7 +3019,7 @@ elif view == "Eval":
                     ],
                 },
             }
-            st.vega_lite_chart(trend, accuracy_trend_chart, use_container_width=True)
+            st.vega_lite_chart(trend, themed_vega_spec(accuracy_trend_chart), use_container_width=True)
         else:
             st.caption("No accuracy values are available for this trend.")
 

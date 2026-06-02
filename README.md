@@ -9,22 +9,22 @@
 
 ### Session Description
 
-Open-source reasoning models are powerful out of the box, but production performance comes from closing the loop. This session shows how to use **Microsoft Foundry** to collect production traces, curate them into datasets, and post-train reasoning models with reinforcement learning using frameworks like **SLIME** and **Ray** — then redeploy the improved models without managing the underlying GPU infrastructure. We cover when RL drives real gains versus other techniques, and walk through the full pipeline live on stage.
+Open-source reasoning models are powerful out of the box, but production performance comes from closing the loop. This session shows how to use **Microsoft Foundry** to collect production traces, curate them into datasets, and post-train reasoning models with reinforcement learning using **SLIME** on **Ray** — then redeploy the improved models without managing the underlying GPU infrastructure. We cover when RL post-training drives real gains versus prompting or plain SFT, and walk through the full pipeline live on stage.
 
-This repo contains the end-to-end source code shown in the session: an **SFT recipe** and an **async GRPO (RFT) recipe** for Qwen3 models, a multi-turn tool-use environment with a graded reward, and the helpers used to submit, monitor, and inspect training jobs on Foundry.
+This repo contains the complete source code shown in the session: a **Supervised Fine-Tuning (SFT)** recipe for Qwen3-32B, an **async GRPO (RFT)** recipe for Qwen3-14B warm-started from the SFT checkpoint, a multi-turn tool-use Retail environment with a deterministic 8-component grader, a live Streamlit rollout dashboard, and all the helpers used to submit, monitor, and inspect training jobs on Foundry.
 
 ▶️ [Watch the session on the Microsoft Build 2026 site](https://build.microsoft.com/en-US/sessions/BRK232)
 
-### 🚀 Getting started
+### 🚀 Getting Started
 
-This session demonstrates a real Foundry training run on multi-node A100 / H100 clusters. To reproduce it end to end you will need access to a Foundry project with attached GPU compute. Read through the [What's in this repo](#-whats-in-this-repo) section first to decide which recipe to start with.
+This session demonstrates a real Foundry training run on multi-node A100 / H100 clusters. To reproduce it end-to-end you will need access to a Foundry project with attached GPU compute. Read through [What's in this repo](#-whats-in-this-repo) first to decide which recipe to start with.
 
-> ⚠️ **Cloud costs apply.** Multi-node GPU training on Microsoft Foundry is expensive. When adapting the recipes, start with a small `--num_rollout` (RFT) or short SFT pass so you can validate end-to-end before scaling out.
+> ⚠️ **Cloud costs apply.** Multi-node GPU training on Microsoft Foundry is expensive. Start with a small `--num_rollout` (RFT) or a short SFT pass to validate end-to-end before scaling out.
 
 #### Prerequisites
 
-- A **[Microsoft Foundry](https://learn.microsoft.com/azure/ai-foundry/)** project. Copy the project endpoint URL from the project's **Overview** page — it has the format `https://<account>.services.ai.azure.com/api/projects/<project>`.
-- A **GPU compute cluster** attached to the project. The recipes default to **4 nodes** of NVIDIA H100 (`ND96r_H100_v5`) or A100 (`ND96amsr_A100_v4`) capacity in Microsoft Foundry.
+- A **[Microsoft Foundry](https://learn.microsoft.com/azure/ai-foundry/)** project. Copy the project endpoint URL from the project's **Overview** page — format: `https://<account>.services.ai.azure.com/api/projects/<project>`.
+- A **GPU compute cluster** attached to the project. The recipes default to **4 nodes** of NVIDIA H100 (`ND96r_H100_v5`) or A100 (`ND96amsr_A100_v4`) capacity.
 - A **user-assigned managed identity (UAI)** the training container will run as, plus the **storage connection name** in your Foundry workspace that the project MSI can write to.
 - **Python 3.11 or newer** (the prerelease `azure-ai-projects` SDK uses `enum.StrEnum`).
 - **[Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)** signed in to the tenant that owns your Foundry project (`az login`).
@@ -51,11 +51,13 @@ This installs the prerelease `azure-ai-projects` SDK and `azure-identity` used b
 az login
 ```
 
-Make sure the active subscription owns your Foundry project: `az account show`.
+Verify the active subscription owns your Foundry project: `az account show`.
+
+> 🔬 **Private Preview.** The Foundry Custom Code training require access to the private preview program. Contact your Microsoft account team if you don't have access yet.
 
 #### 4. Stage 1 — Run the SFT recipe (Qwen3-32B)
 
-Open [src/post-training-sft-recipe/retail_sft_submit.ipynb](src/post-training-sft-recipe/retail_sft_submit.ipynb) in Jupyter or Visual Studio Code, then in the first cell:
+Open [src/post-training-sft-recipe/retail_sft_submit.ipynb](src/post-training-sft-recipe/retail_sft_submit.ipynb) in Jupyter or VS Code, then in the first cell:
 
 ```python
 from slime_sft_setup import setup_env, show_submit_params, submit_job, tail_rollouts
@@ -65,14 +67,14 @@ show_submit_params(cluster="h100")   # or cluster="a100"
 submit_job(cluster="h100")
 ```
 
-This submits a 4-node SLIME-on-Ray async-GRPO job that supervised-fine-tunes **Qwen3-32B** on the Retail domain. Use `tail_rollouts(...)` to stream rollout previews back to the notebook while the job runs. The recipe lives in [src/post-training-sft-recipe/recipe/submit_sft.py](src/post-training-sft-recipe/recipe/submit_sft.py); see its [README](src/post-training-sft-recipe/recipe/README.md) for what to bump when you re-upload data or change containers.
+This submits a 4-node SLIME-on-Ray supervised fine-tuning job on **Qwen3-32B** against the Retail domain dataset. Use `tail_rollouts(...)` to stream rollout previews back to the notebook while the job runs. The recipe payload is in [src/post-training-sft-recipe/recipe/submit_sft.py](src/post-training-sft-recipe/recipe/submit_sft.py) — see its [README](src/post-training-sft-recipe/recipe/README.md) for what to bump when re-uploading data or changing containers.
 
 #### 5. Stage 2 — Run the RFT recipe (GRPO on Qwen3-14B, warm-started from the SFT LoRA)
 
 Open [src/Retail_Customer_Agent_Post_Training.ipynb](src/Retail_Customer_Agent_Post_Training.ipynb) and run:
 
 ```python
-from slime_rl_setup import setup_env, submit_job, stream_logs
+from slime_rl_setup import setup_env, submit_job, job_status
 
 setup_env(
     project_endpoint="https://<account>.services.ai.azure.com/api/projects/<project>",
@@ -81,34 +83,69 @@ setup_env(
     managed_identity_client_id="<uai-client-id>",
 )
 submit_job(cluster_name="<your-gpu-cluster>")
-stream_logs()
+job_status()   # polls job state; opens Foundry portal link for logs
 ```
 
-This submits the **Retail post-purchase resolution** GRPO run — a multi-turn tool-use task with deterministic tools and an 8-component weighted grader (see [retail_grader_rft_tools_v3.py](src/post-training-recipe/demo-artifacts/code/retail_grader_rft_tools_v3.py)). The default `sft_lora_uri` in [submit_job.py](src/post-training-recipe/submit_job.py) points at the demo's SFT checkpoint; override it via the `sft_lora_uri` argument on `submit_job()` to chain in your own Stage-1 output.
+This submits the **Retail post-purchase resolution** GRPO run — a multi-turn tool-use task with deterministic tools and an 8-component weighted grader (see [`retail_grader_rft_tools_v3.py`](src/post-training-recipe/demo-artifacts/code/retail_grader_rft_tools_v3.py)). The default `sft_lora_dataset_id` in [`submit_job.py`](src/post-training-recipe/submit_job.py) points at the demo's SFT checkpoint; override it via the `sft_lora_uri` argument on `submit_job()` to chain in your own Stage 1 output.
 
-> 🔧 The defaults baked into `submit_job.py` and `submit_sft.py` reference the **internal Foundry training pilot** project that hosted the on-stage demo. Override every `project_endpoint`, `managed_identity_*`, `storage_connection_name`, dataset URI, and `compute_cluster` value to point at your own project before submitting.
+> 🔧 The defaults baked into `submit_job.py` and `submit_sft.py` reference the **internal Foundry training pilot** project used for the on-stage demo. Override every `project_endpoint`, `managed_identity_*`, `storage_connection_name`, dataset URI, and `compute_cluster` value to point at your own project before submitting.
+
+#### 6. Stage 3 — Run using the Foundry Low-Level APIs (Qwen3-32B, maximum control)
+
+> 🔬 **Private Preview.** The Foundry Finetuning Low-Level APIs require access to the private preview program. Contact your Microsoft account team if you don't have access yet.
+
+Open [src/Retail_Customer_Agent_Training_API.ipynb](src/Retail_Customer_Agent_Training_API.ipynb) for a fully custom GRPO training loop that runs **from your local machine** while all GPU compute happens on Azure. This approach gives you direct control over batching, rollout strategies, and curriculum scheduling — things not yet exposed through the high-level SDK.
+
+The loop uses three primitives from the Foundry Low-Level API:
+
+| Primitive | What it does |
+|:----------|:------------|
+| `client.create_session(...)` | Provisions a LoRA adapter on the Azure GPU cluster |
+| `client.sample(...)` | Runs multi-turn rollouts (the model calls tools just like in production) |
+| `client.train(...)` | Applies gradient updates server-side; you never download full model weights |
+
+Set your credentials, then run the notebook cells top-to-bottom:
+
+```bash
+export AZURE_AI_API_KEY="<key>"   # or use az login
+export PROJECT_ENDPOINT="https://<account>.services.ai.azure.com/api/projects/<project>"
+```
+
+Results from the on-stage demo: **Qwen3-32B improved from 58.1% → 86.9%** retail_quality (+28.8pp), outperforming o4-mini (82.3%) and GPT-4.1-mini SFT (71.0%).
 
 ### 📦 What's in this repo
 
 | Path | What it is |
 |:-----|:-----------|
-| [src/post-training-sft-recipe/retail_sft_submit.ipynb](src/post-training-sft-recipe/retail_sft_submit.ipynb) | **Stage 1 — SFT notebook.** Submits a Qwen3-32B SLIME supervised fine-tune on 4×H100 or 4×A100. |
-| [src/post-training-sft-recipe/recipe/](src/post-training-sft-recipe/recipe/) | SFT recipe script (`submit_sft.py`) and its README — the actual job payload sent to Foundry. |
-| [src/Retail_Customer_Agent_Post_Training.ipynb](src/Retail_Customer_Agent_Post_Training.ipynb) | **Stage 2 — RFT notebook.** Submits a Qwen3-14B GRPO run warm-started from the SFT LoRA. |
-| [src/slime_rl_setup.py](src/slime_rl_setup.py) | Helper module for the RFT notebook — wraps `setup_env`, `submit_job`, and `stream_logs`. |
-| [src/post-training-recipe/submit_job.py](src/post-training-recipe/submit_job.py) | Builds and submits the Foundry `CommandJob` body for the Retail GRPO run. |
-| [src/post-training-recipe/demo-artifacts/code/](src/post-training-recipe/demo-artifacts/code/) | The custom **environment, tools, grader, and reward** for the multi-turn Retail task — the most reusable pieces if you're building your own RFT task. |
-| [src/post-training-recipe/demo-artifacts/data/](src/post-training-recipe/demo-artifacts/data/) | Paraphrased customer scenarios (`retail_train.jsonl` / `retail_val.jsonl`) with expected actions, amounts, and tool sequences used by the grader. |
-| [src/post-training-sft-recipe/demo-artifacts/data/](src/post-training-sft-recipe/demo-artifacts/data/) | SFT training data (`retail_train_sft.jsonl` / `retail_val_sft.jsonl`) for Stage 1. |
-| [src/post-training-sft-recipe/reports/](src/post-training-sft-recipe/reports/) | Rollout-extraction utilities (`extract_rollouts.py`) used to inspect what the model is producing during training. |
+| [src/post-training-sft-recipe/retail_sft_submit.ipynb](src/post-training-sft-recipe/retail_sft_submit.ipynb) | **Stage 1 notebook.** Submits a Qwen3-32B SLIME supervised fine-tune on 4×H100 or 4×A100. |
+| [src/post-training-sft-recipe/slime_sft_setup.py](src/post-training-sft-recipe/slime_sft_setup.py) | Helper for the SFT notebook — wraps `setup_env`, `show_submit_params`, `submit_job`, and `tail_rollouts`. |
+| [src/post-training-sft-recipe/recipe/](src/post-training-sft-recipe/recipe/) | SFT recipe script (`submit_sft.py`) and its README — the exact job payload sent to Foundry. |
+| [src/post-training-sft-recipe/demo-artifacts/code/sft_retail.py](src/post-training-sft-recipe/demo-artifacts/code/sft_retail.py) | HF TRL-based SFT training script used inside the Foundry container for prompt-masked fine-tuning. |
+| [src/post-training-sft-recipe/demo-artifacts/data/](src/post-training-sft-recipe/demo-artifacts/data/) | SFT training data — `retail_train_sft.jsonl` and `retail_val_sft.jsonl`. |
+| [src/post-training-sft-recipe/reports/extract_rollouts.py](src/post-training-sft-recipe/reports/extract_rollouts.py) | Utility to extract and inspect rollout outputs from a running or completed SFT job. |
+| [src/Retail_Customer_Agent_Post_Training.ipynb](src/Retail_Customer_Agent_Post_Training.ipynb) | **Stage 2 notebook.** Submits a Qwen3-14B GRPO run warm-started from the Stage 1 SFT LoRA. |
+| [src/slime_rl_setup.py](src/slime_rl_setup.py) | Helper for the RFT notebook — wraps `setup_env`, `submit_job`, and `job_status`. |
+| [src/post-training-recipe/submit_job.py](src/post-training-recipe/submit_job.py) | Builds the full Foundry `CommandJob` body and submits the Retail GRPO run. |
+| [src/post-training-recipe/helpers.py](src/post-training-recipe/helpers.py) | SDK-based helpers for dataset upload, GPU layout, job body construction, and submission. |
+| [src/post-training-recipe/demo-artifacts/code/retail_env.py](src/post-training-recipe/demo-artifacts/code/retail_env.py) | In-memory Retail environment — dispatches deterministic tools and tracks episode state. |
+| [src/post-training-recipe/demo-artifacts/code/retail_tools.py](src/post-training-recipe/demo-artifacts/code/retail_tools.py) | Deterministic tool implementations (`get_order_details`, `check_resolution_policy`, etc.). |
+| [src/post-training-recipe/demo-artifacts/code/retail_grader_rft_tools_v3.py](src/post-training-recipe/demo-artifacts/code/retail_grader_rft_tools_v3.py) | 8-component weighted grader (verb, item, reason, format, amount, tool coverage, workflow, integrity). |
+| [src/post-training-recipe/demo-artifacts/code/retail_reward.py](src/post-training-recipe/demo-artifacts/code/retail_reward.py) | Custom reward module — calls the grader and shapes the scalar reward signal for GRPO. |
+| [src/post-training-recipe/demo-artifacts/code/retail_slime_train.py](src/post-training-recipe/demo-artifacts/code/retail_slime_train.py) | SLIME training entrypoint — runs inside the Foundry container to launch Ray + GRPO training. |
+| [src/post-training-recipe/demo-artifacts/code/dashboard.py](src/post-training-recipe/demo-artifacts/code/dashboard.py) | Streamlit rollout browser — exposed as a live Foundry job service on port 8501 during training. |
+| [src/post-training-recipe/demo-artifacts/data/](src/post-training-recipe/demo-artifacts/data/) | RFT training data — `retail_train.jsonl` and `retail_val.jsonl` with expected actions and tool sequences. |
+| [src/post-training-experimentation/](src/post-training-experimentation/) | Local grader evaluation tools — `grader_demo.py`, `debug_grader.py`, `grader_eval_helpers.py`, and sample data for offline testing before submitting a run. |
+| [src/Retail_Customer_Agent_Grader_Test_Bed.ipynb](src/Retail_Customer_Agent_Grader_Test_Bed.ipynb) | Interactive notebook for testing and iterating on grader logic locally. |
+| [src/Retail_Customer_Agent_Training_API.ipynb](src/Retail_Customer_Agent_Training_API.ipynb) | **Stage 3 — Low-Level APIs notebook.** Uses the Foundry Finetuning Low-Level APIs (private preview) to run a fully custom GRPO loop for Qwen3-32B, including multi-turn agent rollouts, live metrics, and model deployment. Achieves **58.1% → 86.9%** retail_quality (+28.8pp). |
 
 ### 🧠 Learning Outcomes
 
 By the end of this session, you will be able to:
 
-- Use Microsoft Foundry as the control plane for collecting production traces, curating training datasets, and launching distributed post-training jobs.
+- Use **Microsoft Foundry** as the control plane for curating training datasets and launching distributed post-training jobs.
 - Decide **when reinforcement learning post-training is worth it** versus prompting, distillation, or plain SFT.
-- Run an end-to-end **SFT → async GRPO** pipeline on open-source reasoning models (Qwen3-14B / Qwen3-32B) with the SLIME framework on Ray.
+- Run an end-to-end **SFT → async GRPO** pipeline on open-source reasoning models (Qwen3-14B / Qwen3-32B) using the SLIME framework on Ray.
+- Use the **Foundry Finetuning Low-Level APIs** to build a fully custom GRPO training loop that runs locally while GPU compute happens on Azure.
 - Design a multi-turn tool-use environment and an **auditable, weighted reward function** that produces a stable learning signal.
 - Redeploy the improved model back into Foundry without managing the underlying GPU infrastructure.
 
@@ -131,15 +168,17 @@ Open src/post-training-recipe/demo-artifacts/code/retail_grader_rft_tools_v3.py 
 3. Adapt the recipe to a new task
 
 ```
-I want to use the SLIME async-GRPO recipe in src/post-training-recipe/ to train Qwen3-14B on my own multi-turn tool-use dataset. Walk me through everything I'd need to change in submit_job.py, the env, the tools, and the grader.
+I want to use the SLIME async-GRPO recipe in src/post-training-recipe/ to train Qwen3-14B on my own multi-turn tool-use dataset. Walk me through everything I'd need to change in submit_job.py, retail_env.py, retail_tools.py, and the grader.
 ```
 
 ### 💻 Technologies Used
 
 1. **[Microsoft Foundry](https://learn.microsoft.com/azure/ai-foundry/)** — control plane for training jobs, datasets, managed identity, and model deployment.
-1. **[Microsoft Foundry fine-tuning (SFT / RFT)](https://learn.microsoft.com/azure/ai-foundry/concepts/fine-tuning-overview)** — managed post-training of open-source and frontier models.
+1. **[Microsoft Foundry fine-tuning (SFT / RFT)](https://learn.microsoft.com/azure/ai-foundry/concepts/fine-tuning-overview)** — managed post-training of open-source models.
 1. **[SLIME](https://github.com/THUDM/slime)** + **[Megatron-LM](https://github.com/NVIDIA/Megatron-LM)** + **[Ray](https://www.ray.io/)** — async GRPO training stack used by both recipes.
 1. **[SGLang](https://github.com/sgl-project/sglang)** — high-throughput rollout engine that pairs with the SLIME actor.
+1. **[TRL (Hugging Face)](https://huggingface.co/docs/trl)** — used by the SFT recipe for prompt-masked supervised fine-tuning.
+1. **[Streamlit](https://streamlit.io/)** — live rollout browser dashboard (`dashboard.py`) served as a Foundry job service during training.
 1. **[Qwen3-14B / Qwen3-32B](https://huggingface.co/Qwen)** — the open-source reasoning base models being post-trained.
 1. **[azure-ai-projects (Python SDK)](https://learn.microsoft.com/python/api/overview/azure/ai-projects-readme)** + **[Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)** — job submission and authentication.
 
@@ -150,7 +189,7 @@ I want to use the SLIME async-GRPO recipe in src/post-training-recipe/ to train 
 | [BRK232 session page](https://build.microsoft.com/en-US/sessions/BRK232) | Recording, abstract, and speaker info |
 | [DEM321 — companion demo](https://build.microsoft.com/en-US/sessions/DEM321) | Shorter walkthrough of the same scenario shown in the demo theater |
 | [Microsoft Foundry in Discord](https://aka.ms/build/foundrydiscord) | Discuss Foundry with the product team and community |
-| [Microsoft Foundry fine-tuning concepts](https://learn.microsoft.com/azure/ai-foundry/concepts/fine-tuning-overview) | When to use SFT, DPO, and RFT |
+| [Microsoft Foundry fine-tuning concepts](https://learn.microsoft.com/azure/ai-foundry/concepts/fine-tuning-overview) | When to use SFT and RFT |
 | [SLIME framework](https://github.com/THUDM/slime) | Async RL framework used by both recipes in this repo |
 | [https://aka.ms/build26-next-steps](https://aka.ms/build26-next-steps) | Explore lab and session repos to further your learning from Microsoft Build |
 
@@ -216,3 +255,4 @@ trademarks or logos is subject to and must follow
 [Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/legal/intellectualproperty/trademarks/usage/general).
 Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
 Any use of third-party trademarks or logos are subject to those third-party's policies.
+
