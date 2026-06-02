@@ -29,6 +29,8 @@ This session demonstrates a real Foundry training run on multi-node A100 / H100 
 - **Python 3.11 or newer** (the prerelease `azure-ai-projects` SDK uses `enum.StrEnum`).
 - **[Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)** signed in to the tenant that owns your Foundry project (`az login`).
 
+> 🔬 **Private Preview.** The Foundry Custom Code training require access to the private preview program. Contact your Microsoft account team if you don't have access yet.
+
 #### 1. Clone the repo
 
 ```bash
@@ -52,8 +54,6 @@ az login
 ```
 
 Verify the active subscription owns your Foundry project: `az account show`.
-
-> 🔬 **Private Preview.** The Foundry Custom Code training require access to the private preview program. Contact your Microsoft account team if you don't have access yet.
 
 #### 4. Stage 1 — Run the SFT recipe (Qwen3-32B)
 
